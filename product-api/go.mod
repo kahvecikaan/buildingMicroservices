@@ -1,4 +1,4 @@
-module github.com/kahvecikaan/buildingMicroservices
+module github.com/kahvecikaan/buildingMicroservices/product-api
 
 go 1.22
 

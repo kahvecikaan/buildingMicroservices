@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"github.com/gorilla/mux"
-	"github.com/kahvecikaan/buildingMicroservices/handlers"
+	"github.com/kahvecikaan/buildingMicroservices/product-api/handlers"
 	"log"
 	"net/http"
 	"os"

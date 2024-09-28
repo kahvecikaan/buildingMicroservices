@@ -1,16 +1,17 @@
+// Package handlers
 // Package classification of Product API
 //
 // Documentation for Product API
 //
-//		Schemes: http
-//		BasePath: /products
-//	 Version: 1.0.0
+//	Schemes: http
+//	BasePath: /products
+//	Version: 1.0.0
 //
-//		Consumes:
-//		- application/json
+//	Consumes:
+//	- application/json
 //
-//		Produces:
-//		- application/json
+//	Produces:
+//	- application/json
 //
 // swagger:meta
 package handlers
@@ -66,7 +67,7 @@ type productParamsWrapper struct {
 	Body data.Product
 }
 
-// swagger:parameters updateProduct
+// swagger:parameters listSingleProduct deleteProduct
 type productIDParamsWrapper struct {
 	// The id of the product for which the operation relates
 	// in: path

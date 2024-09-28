@@ -15,6 +15,8 @@ import (
 
 // Create handles POST requests to add new products
 func (p *Products) Create(rw http.ResponseWriter, r *http.Request) {
+	rw.Header().Set("Content-Type", "application/json")
+
 	// fetch the product from the context
 	prod := r.Context().Value(KeyProduct{}).(*data.Product)
 

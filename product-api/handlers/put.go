@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-// swagger:route PUT /products/{id} products updateProduct
+// swagger:route PUT /products products updateProduct
 // Update a products details
 //
 // responses:
@@ -16,6 +16,8 @@ import (
 
 // Update handles PUT requests to update products
 func (p *Products) Update(rw http.ResponseWriter, r *http.Request) {
+	rw.Header().Set("Content-Type", "application/json")
+
 	// fetch the product from the context
 	prod := r.Context().Value(KeyProduct{}).(*data.Product)
 	p.l.Println("[DEBUG] updating record id", prod.ID)

@@ -6,7 +6,8 @@ import (
 	"net/http"
 )
 
-// MiddlewareProductValidation validates the product in the request and calls the next handler if ok
+// MiddlewareProductValidation validates the product in the request and adds it to the request context.
+// Then, calls the next handler
 func (p *Products) MiddlewareProductValidation(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
@@ -20,7 +21,7 @@ func (p *Products) MiddlewareProductValidation(next http.Handler) http.Handler {
 			return
 		}
 
-		// validate the product
+		// Validate the product
 		errs := p.v.Validate(prod)
 		if len(errs) != 0 {
 			p.l.Println("[ERROR] validating product", errs)
@@ -31,7 +32,7 @@ func (p *Products) MiddlewareProductValidation(next http.Handler) http.Handler {
 			return
 		}
 
-		// add the product to the context
+		// Add the validated product to the context
 		ctx := context.WithValue(r.Context(), KeyProduct{}, prod)
 		req := r.WithContext(ctx)
 

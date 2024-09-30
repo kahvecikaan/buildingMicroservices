@@ -1,4 +1,4 @@
-basePath: /products
+basePath: /
 consumes:
     - application/json
 definitions:
@@ -105,7 +105,7 @@ paths:
                   schema:
                     $ref: '#/definitions/Product'
             responses:
-                "201":
+                "204":
                     $ref: '#/responses/noContentResponse'
                 "404":
                     $ref: '#/responses/errorResponse'
@@ -126,7 +126,7 @@ paths:
                   type: integer
                   x-go-name: ID
             responses:
-                "201":
+                "204":
                     $ref: '#/responses/noContentResponse'
                 "404":
                     $ref: '#/responses/errorResponse'

@@ -20,6 +20,13 @@ func (p *Products) Create(rw http.ResponseWriter, r *http.Request) {
 	// fetch the product from the context
 	prod := r.Context().Value(KeyProduct{}).(*data.Product)
 
-	p.l.Printf("[DEBUG] Inserting product: %#v\n", prod)
 	data.AddProduct(prod)
+
+	p.l.Printf("[DEBUG] Inserting product: %#v\n", prod)
+
+	// Serialize the created product and send it back in the response
+	err := data.ToJSON(prod, rw)
+	if err != nil {
+		p.l.Println("[ERROR] serializing product", err)
+	}
 }

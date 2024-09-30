@@ -10,7 +10,7 @@ import (
 //
 // responses:
 //
-//	201: noContentResponse
+//	204: noContentResponse
 //	404: errorResponse
 //	422: errorValidation
 

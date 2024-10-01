@@ -71,10 +71,10 @@ func main() {
 
 	// start the server
 	go func() {
-		l.Println("Starting server on :9090")
+		l.Println("Starting server on ", *bindAddress)
 		err := s.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
-			l.Fatalf("Could not listen on :9090: %v\n", err)
+			l.Fatalf("Error starting server: %s\n", err)
 		}
 	}()
 

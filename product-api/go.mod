@@ -11,6 +11,7 @@ require (
 	github.com/go-playground/validator/v10 v10.22.1
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
+	github.com/nicholasjackson/env v0.6.1
 )
 
 require (
@@ -31,7 +32,6 @@ require (
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
-	github.com/nicholasjackson/env v0.6.1 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	go.mongodb.org/mongo-driver v1.14.0 // indirect

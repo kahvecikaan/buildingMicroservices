@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"github.com/go-openapi/runtime/middleware"
+	gohandlers "github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/data"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/handlers"
@@ -45,10 +46,20 @@ func main() {
 	getRouter.Handle("/docs", sh)
 	getRouter.Handle("/swagger.yaml", http.FileServer(http.Dir("./")))
 
+	// CORS middleware
+	corsHandler := gohandlers.CORS(
+		gohandlers.AllowedOrigins([]string{"http://localhost:3000"}),
+		gohandlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
+		gohandlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization"}),
+	)
+
+	// Apply CORS middleware to our router
+	corsRouter := corsHandler(sm)
+
 	// create a new server
 	s := &http.Server{
 		Addr:         ":9090",
-		Handler:      sm,                // set the default handler
+		Handler:      corsRouter,        // use the CORS-enabled router
 		ErrorLog:     l,                 // set the logger for the server
 		ReadTimeout:  5 * time.Second,   // max time to read request from the client
 		WriteTimeout: 10 * time.Second,  // max time to write response to the client
@@ -57,9 +68,10 @@ func main() {
 
 	// start the server
 	go func() {
+		l.Println("Starting server on :9090")
 		err := s.ListenAndServe()
-		if err != nil {
-			l.Fatal(err)
+		if err != nil && err != http.ErrServerClosed {
+			l.Fatalf("Could not listen on :9090: %v\n", err)
 		}
 	}()
 

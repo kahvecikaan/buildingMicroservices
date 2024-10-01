@@ -7,12 +7,15 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/data"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/handlers"
+	"github.com/nicholasjackson/env"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"time"
 )
+
+var bindAddress = env.String("BIND_ADDRESS", false, ":9090", "Bind address for the server")
 
 func main() {
 	l := log.New(os.Stdout, "product-api", log.LstdFlags)
@@ -58,7 +61,7 @@ func main() {
 
 	// create a new server
 	s := &http.Server{
-		Addr:         ":9090",
+		Addr:         *bindAddress,      // configure the bind address
 		Handler:      corsRouter,        // use the CORS-enabled router
 		ErrorLog:     l,                 // set the logger for the server
 		ReadTimeout:  5 * time.Second,   // max time to read request from the client

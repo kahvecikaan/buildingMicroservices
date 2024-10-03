@@ -172,12 +172,13 @@ Temporary Items
 
 .idea/
 
-# Ignore test.png in the root directory
-/test.png
+# Ignore test.png in the product-images directory
+/product-images/test.png
 
-# Ignore imagestore directory and its contents
-/imagestore/
+# Ignore imagestore directory and its contents inside product-images
+/product-images/imagestore/
 
-# Ignore downloaded test images
-/downloaded_*.png
+# Ignore downloaded test images in product-images
+/product-images/downloaded_*.png
+
 # End of https://www.toptal.com/developers/gitignore/api/macos,goland,go

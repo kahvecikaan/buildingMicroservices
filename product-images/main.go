@@ -46,16 +46,21 @@ func main() {
 	// create a new serve mux and register the handlers
 	sm := mux.NewRouter()
 
-	// filename regex: {filename:[a-zA-Z]+\\.[a-z]{3}}
-	ph := sm.Methods(http.MethodPost).Subrouter()
-	ph.HandleFunc("/images/{id:[0-9]+}/{filename:[a-zA-Z]+\\.[a-z]{3}}", fh.ServeHTTP)
+	// Filename regex: {filename:[a-zA-Z]+\\.[a-z]{3}}
+	route := "/images/{id:[0-9]+}/{filename:[a-zA-Z]+\\.[a-z]{3}}"
 
-	// get files
-	gh := sm.Methods(http.MethodGet).Subrouter()
-	gh.Handle(
-		"/images/{id:[0-9]+}/{filename:[a-zA-Z]+\\.[a-z]{3}}",
-		http.StripPrefix("/images/", http.FileServer(http.Dir(*basePath))),
-	)
+	// Use the same handler for both POST and GET methods
+	sm.HandleFunc(route, fh.ServeHTTP).Methods(http.MethodPost, http.MethodGet)
+
+	//ph := sm.Methods(http.MethodPost).Subrouter()
+	// ph.HandleFunc("/images/{id:[0-9]+}/{filename:[a-zA-Z]+\\.[a-z]{3}}", fh.ServeHTTP)
+
+	// get files (previous implementation)
+	// gh := sm.Methods(http.MethodGet).Subrouter()
+	// gh.Handle(
+	//	"/images/{id:[0-9]+}/{filename:[a-zA-Z]+\\.[a-z]{3}}",
+	//	http.StripPrefix("/images/", http.FileServer(http.Dir(*basePath))),
+	//)
 
 	// create a new server
 	s := http.Server{

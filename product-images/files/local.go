@@ -20,18 +20,20 @@ type maxBytesWriter struct {
 
 func (l *maxBytesWriter) Write(p []byte) (int, error) {
 	if l.n <= 0 {
-		return 0, io.ErrShortWrite
+		return 0, io.EOF
 	}
-	toWrite := len(p)
-	if toWrite > l.n {
-		toWrite = l.n
+	if len(p) > l.n {
+		p = p[:l.n]
 	}
-	n, err := l.w.Write(p[:toWrite])
+	n, err := l.w.Write(p)
 	l.n -= n
-	if n < len(p) && err == nil {
-		err = io.ErrShortWrite
+	if err != nil {
+		return n, err
 	}
-	return n, err
+	if l.n <= 0 {
+		return n, io.EOF
+	}
+	return n, nil
 }
 
 // NewLocal creates a new Local filesystem with the given base path
@@ -70,7 +72,7 @@ func (l *Local) Save(path string, contents io.Reader) error {
 	writer := &maxBytesWriter{w: tempFile, n: l.maxFileSize}
 	// Copy the contents to the temporary file, limited by maxBytesWriter
 	written, err := io.Copy(writer, contents)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		tempFile.Close()
 		return fmt.Errorf("unable to write to file: %w", err)
 	}

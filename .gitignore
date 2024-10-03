@@ -171,4 +171,13 @@ Temporary Items
 *.icloud
 
 .idea/
+
+# Ignore test.png in the root directory
+/test.png
+
+# Ignore imagestore directory and its contents
+/imagestore/
+
+# Ignore downloaded test images
+/downloaded_*.png
 # End of https://www.toptal.com/developers/gitignore/api/macos,goland,go

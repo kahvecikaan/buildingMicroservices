@@ -5,28 +5,40 @@ import (
 	"github.com/go-openapi/runtime/middleware"
 	gohandlers "github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
+	"github.com/hashicorp/go-hclog"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/data"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/handlers"
 	"github.com/nicholasjackson/env"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"time"
 )
 
-var bindAddress = env.String("BIND_ADDRESS", false, ":9090", "Bind address for the server")
+var (
+	bindAddress = env.String("BIND_ADDRESS", false, ":9090", "Bind address for the server")
+	logLevel    = env.String("LOG_LEVEL", false, "debug", "Log output level for the server [debug, info, trace]")
+)
 
 func main() {
-	l := log.New(os.Stdout, "product-api", log.LstdFlags)
+	env.Parse()
+
+	l := hclog.New(&hclog.LoggerOptions{
+		Name:  "product-api",
+		Level: hclog.LevelFromString(*logLevel),
+	})
+
+	// Create a standard logger for the HTTP server
+	sl := l.StandardLogger(&hclog.StandardLoggerOptions{InferLevels: true})
+
 	v := data.NewValidation()
 
 	ph := handlers.NewProducts(l, v)
 
-	// create a new serve mux and register the handlers
+	// Create a new router
 	sm := mux.NewRouter()
 
-	// handlers for API
+	// Handlers for API
 	getRouter := sm.Methods(http.MethodGet).Subrouter()
 	getRouter.HandleFunc("/products", ph.ListAll)
 	getRouter.HandleFunc("/products/{id:[0-9]+}", ph.ListSingle)
@@ -42,7 +54,7 @@ func main() {
 	deleteRouter := sm.Methods(http.MethodDelete).Subrouter()
 	deleteRouter.HandleFunc("/products/{id:[0-9]+}", ph.Delete)
 
-	// handler for documentation
+	// Handler for documentation
 	opts := middleware.RedocOpts{SpecURL: "/swagger.yaml"}
 	sh := middleware.Redoc(opts, nil)
 
@@ -59,35 +71,38 @@ func main() {
 	// Apply CORS middleware to our router
 	corsRouter := corsHandler(sm)
 
-	// create a new server
+	// Create a new server
 	s := &http.Server{
-		Addr:         *bindAddress,      // configure the bind address
-		Handler:      corsRouter,        // use the CORS-enabled router
-		ErrorLog:     l,                 // set the logger for the server
-		ReadTimeout:  5 * time.Second,   // max time to read request from the client
-		WriteTimeout: 10 * time.Second,  // max time to write response to the client
-		IdleTimeout:  120 * time.Second, // max time for connections using TCP Keep-Alive
+		Addr:         *bindAddress,      // Configure the bind address
+		Handler:      corsRouter,        // Use the CORS-enabled router
+		ErrorLog:     sl,                // Set the logger for the server
+		ReadTimeout:  5 * time.Second,   // Max time to read request from the client
+		WriteTimeout: 10 * time.Second,  // Max time to write response to the client
+		IdleTimeout:  120 * time.Second, // Max time for connections using TCP Keep-Alive
 	}
 
-	// start the server
+	// Start the server
 	go func() {
-		l.Println("Starting server on ", *bindAddress)
+		l.Info("Starting server", "bind_address", *bindAddress)
+
 		err := s.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
-			l.Fatalf("Error starting server: %s\n", err)
+			l.Error("Error starting server", "error", err)
+			os.Exit(1)
 		}
 	}()
 
-	// trap sigterm or interrupt and gracefully shutdown the server
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt)
-	signal.Notify(sigChan, os.Kill)
+	// Trap sigterm or interrupt and gracefully shutdown the server
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	signal.Notify(c, os.Kill)
 
-	// Block until a signal is received.
-	sig := <-sigChan
-	l.Println("Received terminate, graceful shutdown: ", sig)
+	// Block until a signal is received
+	sig := <-c
+	l.Info("Shutting down the server", "signal", sig)
 
-	// gracefully shutdown the server, waiting max 30 seconds for current operations to complete
-	tc, _ := context.WithTimeout(context.Background(), 30*time.Second)
-	s.Shutdown(tc)
+	// Gracefully shutdown the server, waiting max 30 seconds for current operations to complete
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	s.Shutdown(ctx)
 }

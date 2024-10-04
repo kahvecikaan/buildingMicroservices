@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/data"
 	"net/http"
 )
@@ -22,11 +23,11 @@ func (p *Products) Create(rw http.ResponseWriter, r *http.Request) {
 
 	data.AddProduct(prod)
 
-	p.l.Printf("[DEBUG] Inserting product: %#v\n", prod)
+	p.l.Debug("Inserting product", "product", fmt.Sprintf("%+v", prod))
 
 	// Serialize the created product and send it back in the response
 	err := data.ToJSON(prod, rw)
 	if err != nil {
-		p.l.Println("[ERROR] serializing product", err)
+		p.l.Error("Error serializing product", "error", err)
 	}
 }

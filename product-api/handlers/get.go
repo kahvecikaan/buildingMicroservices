@@ -13,7 +13,7 @@ import (
 
 // ListAll handles GET requests and returns all current products
 func (p *Products) ListAll(rw http.ResponseWriter, r *http.Request) {
-	p.l.Println("[DEBUG] get all records")
+	p.l.Debug("Get all product records")
 
 	rw.Header().Set("Content-Type", "application/json")
 
@@ -22,7 +22,7 @@ func (p *Products) ListAll(rw http.ResponseWriter, r *http.Request) {
 	err := data.ToJSON(prods, rw)
 	if err != nil {
 		// we should never be here but log the error just in case
-		p.l.Println("[ERROR] serializing product", err)
+		p.l.Error("Error serializing product list", "error", err)
 	}
 }
 
@@ -39,7 +39,7 @@ func (p *Products) ListSingle(rw http.ResponseWriter, r *http.Request) {
 
 	id := getProductID(r)
 
-	p.l.Println("[DEBUG] get record id", id)
+	p.l.Debug("Get product by ID", "id", id)
 
 	prod, err := data.GetProductByID(id)
 
@@ -47,13 +47,13 @@ func (p *Products) ListSingle(rw http.ResponseWriter, r *http.Request) {
 	case nil:
 
 	case data.ErrProductNotFound:
-		p.l.Println("[ERROR] fetching product", err)
+		p.l.Error("Product not found", "id", id, "error", err)
 
 		rw.WriteHeader(http.StatusNotFound)
 		data.ToJSON(&GenericError{Message: err.Error()}, rw)
 		return
 	default:
-		p.l.Println("[ERROR] fetching product", err)
+		p.l.Error("Error fetching product", "id", id, "error", err)
 
 		rw.WriteHeader(http.StatusInternalServerError)
 		data.ToJSON(&GenericError{Message: err.Error()}, rw)
@@ -63,6 +63,6 @@ func (p *Products) ListSingle(rw http.ResponseWriter, r *http.Request) {
 	err = data.ToJSON(prod, rw)
 	if err != nil {
 		// we should never be here but log the error just in case
-		p.l.Println("[ERROR] serializing product", err)
+		p.l.Error("Error serializing product", "id", id, "error", err)
 	}
 }

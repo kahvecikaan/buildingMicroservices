@@ -3,7 +3,6 @@ package handlers
 import (
 	"github.com/gorilla/mux"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/data"
-	"log"
 	"net/http"
 	"strconv"
 )
@@ -13,12 +12,12 @@ type KeyProduct struct{}
 
 // Products handler for getting and updating products
 type Products struct {
-	l *log.Logger
+	l Logger
 	v *data.Validation
 }
 
 // NewProducts returns a new Product handler with the given logger
-func NewProducts(l *log.Logger, v *data.Validation) *Products {
+func NewProducts(l Logger, v *data.Validation) *Products {
 	return &Products{l, v}
 }
 

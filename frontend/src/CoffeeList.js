@@ -6,7 +6,7 @@ function CoffeeList() {
     const [products, setProducts] = useState([]);
 
     useEffect(() => {
-        axios.get('http://localhost:9090/products')
+        axios.get(`${process.env.REACT_APP_API_LOCATION}/products`)
             .then(response => {
                 console.log(response.data);
                 setProducts(response.data);

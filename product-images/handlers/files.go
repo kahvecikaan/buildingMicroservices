@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 // Files is a handler for reading and writing files
@@ -72,10 +73,18 @@ func (f *Files) UploadMultipart(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	// Retrieve 'id' from form data
-	id := r.FormValue("id")
-	if id == "" {
+	idStr := r.FormValue("id")
+	if idStr == "" {
 		f.log.Error("Missing 'id' in form data")
 		http.Error(rw, "Missing 'id' in form data", http.StatusBadRequest)
+		return
+	}
+
+	// Validate 'id' as an integer
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		f.log.Error("Invalid 'id' format", "id", idStr, "error", err)
+		http.Error(rw, "Invalid 'id' format. Expected integer.", http.StatusBadRequest)
 		return
 	}
 
@@ -92,7 +101,7 @@ func (f *Files) UploadMultipart(rw http.ResponseWriter, r *http.Request) {
 	f.log.Info("Handle POST (multipart)", "id", id, "filename", fn)
 
 	// Save the file
-	f.saveFile(id, fn, rw, file)
+	f.saveFile(idStr, fn, rw, file)
 }
 
 func (f *Files) GetFile(rw http.ResponseWriter, r *http.Request) {

@@ -181,4 +181,6 @@ Temporary Items
 # Ignore downloaded test images in product-images
 /product-images/downloaded_*.png
 
+# Environment Variables
+.env
 # End of https://www.toptal.com/developers/gitignore/api/macos,goland,go

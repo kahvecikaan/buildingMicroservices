@@ -21,6 +21,8 @@ function Admin() {
             return;
         }
 
+        // After successful validation
+        setValidated(false);
         setButtonDisabled(true);
         setToastShow(false);
 
@@ -37,20 +39,23 @@ function Admin() {
                 // Let Axios set 'Content-Type' automatically
             );
 
-            if (response.status === 201) { // Updated check
+            if (response.status === 201) { // Correct status code check
                 setToastText('Uploaded file successfully.');
             } else {
                 setToastText(`Unable to upload file. Error: ${response.statusText}`);
             }
         } catch (error) {
             console.error('Error:', error);
-            setToastText(`Unable to upload file. ${error.message}`);
+            // Extract a more detailed error message if available
+            const errorMessage = error.response && error.response.data
+                ? error.response.data
+                : error.message;
+            setToastText(`Unable to upload file. ${errorMessage}`);
         } finally {
             setButtonDisabled(false);
             setToastShow(true);
         }
     };
-
 
     const changeHandler = (event) => {
         const { name, value, files } = event.target;

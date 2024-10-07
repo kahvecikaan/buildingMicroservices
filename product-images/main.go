@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	gohandlers "github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/hashicorp/go-hclog"
 	"github.com/kahvecikaan/buildingMicroservices/product-images/files"
@@ -50,7 +51,16 @@ func main() {
 	route := "/images/{id:[0-9]+}/{filename:[a-zA-Z]+\\.[a-z]{3}}"
 
 	// Use the same handler for both POST and GET methods
-	sm.HandleFunc(route, fh.ServeHTTP).Methods(http.MethodPost, http.MethodGet)
+	// sm.HandleFunc(route, fh.ServeHTTP).Methods(http.MethodPost, http.MethodGet)
+
+	// upload files
+	postRouter := sm.Methods(http.MethodPost).Subrouter()
+	postRouter.HandleFunc(route, fh.UploadREST)
+	postRouter.HandleFunc("/images", fh.UploadMultipart)
+
+	// get files
+	getRouter := sm.Methods(http.MethodGet).Subrouter()
+	getRouter.HandleFunc(route, fh.GetFile)
 
 	//ph := sm.Methods(http.MethodPost).Subrouter()
 	// ph.HandleFunc("/images/{id:[0-9]+}/{filename:[a-zA-Z]+\\.[a-z]{3}}", fh.ServeHTTP)
@@ -62,10 +72,20 @@ func main() {
 	//	http.StripPrefix("/images/", http.FileServer(http.Dir(*basePath))),
 	//)
 
+	// CORS middleware
+	corsHandler := gohandlers.CORS(
+		gohandlers.AllowedOrigins([]string{"http://localhost:3000"}),
+		gohandlers.AllowedMethods([]string{"GET", "POST", "OPTIONS"}),
+		gohandlers.AllowedHeaders([]string{"Content-Type", "Authorization"}),
+	)
+
+	// Apply CORS middleware to our router
+	corsRouter := corsHandler(sm)
+
 	// create a new server
 	s := http.Server{
 		Addr:         *bindAddress,      // configure the bind address
-		Handler:      sm,                // set the default handler
+		Handler:      corsRouter,        // use the CORS-enabled router
 		ErrorLog:     sl,                // the logger for the server
 		ReadTimeout:  5 * time.Second,   // max time to read request from the client
 		WriteTimeout: 10 * time.Second,  // max time to write response to the client

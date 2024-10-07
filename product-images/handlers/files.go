@@ -22,7 +22,31 @@ func NewFiles(l hclog.Logger, s files.Storage) *Files {
 }
 
 // ServeHTTP implements the http.Handler interface
-func (f *Files) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
+//func (f *Files) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
+//	vars := mux.Vars(r)
+//	id, idExists := vars["id"]
+//	fn, fnExists := vars["filename"]
+//
+// Validate that id and filename are present
+//	if !idExists || !fnExists || id == "" || fn == "" {
+//		f.invalidURI(r.URL.Path, rw)
+//		return
+//	}
+//
+//	f.log.Info("Handle request", "method", r.Method, "id", id, "filename", fn)
+//
+// Handle different HTTP methods
+//	switch r.Method {
+//	case http.MethodGet:
+//		f.getFile(id, fn, rw, r)
+//	case http.MethodPost:
+//		f.saveFile(id, fn, rw, r)
+//	default:
+//		f.invalidMethod(rw, r)
+//	}
+//}
+
+func (f *Files) UploadREST(rw http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, idExists := vars["id"]
 	fn, fnExists := vars["filename"]
@@ -33,17 +57,52 @@ func (f *Files) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	f.log.Info("Handle request", "method", r.Method, "id", id, "filename", fn)
+	f.log.Info("Handle POST (REST)", "id", id, "filename", fn)
 
-	// Handle different HTTP methods
-	switch r.Method {
-	case http.MethodGet:
-		f.getFile(id, fn, rw, r)
-	case http.MethodPost:
-		f.saveFile(id, fn, rw, r)
-	default:
-		f.invalidMethod(rw, r)
+	// Save the file from the request body
+	f.saveFile(id, fn, rw, r.Body)
+}
+
+func (f *Files) UploadMultipart(rw http.ResponseWriter, r *http.Request) {
+	err := r.ParseMultipartForm(128 * 1024)
+	if err != nil {
+		f.log.Error("Unable to parse multipart form", "error", err)
+		http.Error(rw, "Unable to parse form", http.StatusBadRequest)
+		return
 	}
+
+	// Retrieve 'id' from form data
+	id := r.FormValue("id")
+	if id == "" {
+		f.log.Error("Missing 'id' in form data")
+		http.Error(rw, "Missing 'id' in form data", http.StatusBadRequest)
+		return
+	}
+
+	// Retrieve the file
+	file, fileHeader, err := r.FormFile("file")
+	if err != nil {
+		f.log.Error("Unable to get file from form data", "error", err)
+		http.Error(rw, "Unable to get file from form data", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	fn := fileHeader.Filename
+	f.log.Info("Handle POST (multipart)", "id", id, "filename", fn)
+
+	// Save the file
+	f.saveFile(id, fn, rw, file)
+}
+
+func (f *Files) GetFile(rw http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+	fn := vars["filename"]
+
+	f.log.Info("Handle GET", "id", id, "filename", fn)
+
+	f.getFile(id, fn, rw, r)
 }
 
 func (f *Files) invalidURI(uri string, rw http.ResponseWriter) {
@@ -52,15 +111,20 @@ func (f *Files) invalidURI(uri string, rw http.ResponseWriter) {
 }
 
 // saveFile saves the contents of the request to a file
-func (f *Files) saveFile(id, path string, rw http.ResponseWriter, r *http.Request) {
+func (f *Files) saveFile(id, path string, rw http.ResponseWriter, r io.Reader) {
 	f.log.Info("Save file for products", "id", id, "path", path)
 
 	fp := filepath.Join(id, path)
-	err := f.store.Save(fp, r.Body)
+	err := f.store.Save(fp, r)
 	if err != nil {
 		f.log.Error("Unable to save the file", "error", err)
 		http.Error(rw, "Unable to save the file", http.StatusInternalServerError)
+		return
 	}
+
+	// Respond with success
+	rw.WriteHeader(http.StatusCreated)
+	rw.Write([]byte("File uploaded successfully"))
 }
 
 func (f *Files) getFile(id, path string, rw http.ResponseWriter, r *http.Request) {
@@ -114,7 +178,7 @@ func getContentType(file *os.File) (string, error) {
 	return contentType, nil
 }
 
-func (f *Files) invalidMethod(rw http.ResponseWriter, r *http.Request) {
-	f.log.Error("Invalid method", "method", r.Method)
-	http.Error(rw, "Method not allowed", http.StatusMethodNotAllowed)
-}
+//func (f *Files) invalidMethod(rw http.ResponseWriter, r *http.Request) {
+//	f.log.Error("Invalid method", "method", r.Method)
+//	http.Error(rw, "Method not allowed", http.StatusMethodNotAllowed)
+//}

@@ -43,6 +43,7 @@ func main() {
 
 	// create the handlers
 	fh := handlers.NewFiles(l, stor)
+	gzipHandler := handlers.GzipHandler{}
 
 	// create a new serve mux and register the handlers
 	sm := mux.NewRouter()
@@ -57,10 +58,12 @@ func main() {
 	postRouter := sm.Methods(http.MethodPost).Subrouter()
 	postRouter.HandleFunc(route, fh.UploadREST)
 	postRouter.HandleFunc("/images", fh.UploadMultipart)
+	postRouter.Use(gzipHandler.GzipMiddleware)
 
 	// get files
 	getRouter := sm.Methods(http.MethodGet).Subrouter()
 	getRouter.HandleFunc(route, fh.GetFile)
+	getRouter.Use(gzipHandler.GzipMiddleware)
 
 	//ph := sm.Methods(http.MethodPost).Subrouter()
 	// ph.HandleFunc("/images/{id:[0-9]+}/{filename:[a-zA-Z]+\\.[a-z]{3}}", fh.ServeHTTP)

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"github.com/gorilla/mux"
+	"github.com/hashicorp/go-hclog"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/data"
 	"net/http"
 	"strconv"
@@ -12,13 +13,14 @@ type KeyProduct struct{}
 
 // Products handler for getting and updating products
 type Products struct {
-	l Logger
-	v *data.Validation
+	l         hclog.Logger
+	v         *data.Validation
+	productDB *data.ProductsDB
 }
 
 // NewProducts returns a new Product handler with the given logger
-func NewProducts(l Logger, v *data.Validation) *Products {
-	return &Products{l, v}
+func NewProducts(log hclog.Logger, v *data.Validation, pdb *data.ProductsDB) *Products {
+	return &Products{log, v, pdb}
 }
 
 // GenericError is a generic error message returned by a server

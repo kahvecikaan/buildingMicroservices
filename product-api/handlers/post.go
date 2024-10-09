@@ -21,7 +21,7 @@ func (p *Products) Create(rw http.ResponseWriter, r *http.Request) {
 	// fetch the product from the context
 	prod := r.Context().Value(KeyProduct{}).(*data.Product)
 
-	data.AddProduct(prod)
+	p.productDB.AddProduct(prod)
 
 	p.l.Debug("Inserting product", "product", fmt.Sprintf("%+v", prod))
 

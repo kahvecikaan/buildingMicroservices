@@ -20,19 +20,19 @@ func (p *Products) Update(rw http.ResponseWriter, r *http.Request) {
 
 	// fetch the product from the context
 	prod := r.Context().Value(KeyProduct{}).(*data.Product)
-	p.l.Debug("Updating product", "id", prod.ID)
+	p.l.Debug("Updating record id", "id", prod.ID)
 
-	err := data.UpdateProduct(prod)
+	err := p.productDB.UpdateProduct(prod)
 	if err == data.ErrProductNotFound {
 		p.l.Error("Product not found", "id", prod.ID, "error", err)
 
 		rw.WriteHeader(http.StatusNotFound)
-		data.ToJSON(&GenericError{Message: "Product not found"}, rw)
+		data.ToJSON(&GenericError{Message: "Product not found in database"}, rw)
 		return
 	}
 
 	if err != nil {
-		http.Error(rw, "Product not found", http.StatusInternalServerError)
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}
 

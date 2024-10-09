@@ -17,9 +17,16 @@ func (p *Products) ListAll(rw http.ResponseWriter, r *http.Request) {
 
 	rw.Header().Set("Content-Type", "application/json")
 
-	prods := data.GetProducts()
+	cur := r.URL.Query().Get("currency")
 
-	err := data.ToJSON(prods, rw)
+	prods, err := p.productDB.GetProducts(cur)
+	if err != nil {
+		rw.WriteHeader(http.StatusInternalServerError)
+		data.ToJSON(&GenericError{Message: err.Error()}, rw)
+		return
+	}
+
+	err = data.ToJSON(prods, rw)
 	if err != nil {
 		// we should never be here but log the error just in case
 		p.l.Error("Error serializing product list", "error", err)
@@ -38,10 +45,11 @@ func (p *Products) ListSingle(rw http.ResponseWriter, r *http.Request) {
 	rw.Header().Set("Content-Type", "application/json")
 
 	id := getProductID(r)
+	cur := r.URL.Query().Get("currency")
 
 	p.l.Debug("Get product by ID", "id", id)
 
-	prod, err := data.GetProductByID(id)
+	prod, err := p.productDB.GetProductByID(id, cur)
 
 	switch err {
 	case nil:

@@ -6,9 +6,12 @@ import (
 	gohandlers "github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/hashicorp/go-hclog"
+	protos "github.com/kahvecikaan/buildingMicroservices/currency/protos/currency"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/data"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/handlers"
 	"github.com/nicholasjackson/env"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,19 +31,46 @@ func main() {
 		Level: hclog.LevelFromString(*logLevel),
 	})
 
-	// Create a standard logger for the HTTP server
+	// create a standard logger for the HTTP server
 	sl := l.StandardLogger(&hclog.StandardLoggerOptions{InferLevels: true})
-
 	v := data.NewValidation()
 
-	ph := handlers.NewProducts(l, v)
+	dialOpts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
 
-	// Create a new router
+	currencyServiceAddress := "localhost:9092"
+	// create the gRPC client connection
+	conn, err := grpc.NewClient(currencyServiceAddress, dialOpts...)
+	if err != nil {
+		l.Error("failed to connect to currency service", "error", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
+
+	// create currency client
+	currencyClient := protos.NewCurrencyClient(conn)
+
+	// check if the currency service is available
+	if err := checkCurrencyService(currencyClient); err != nil {
+		l.Error("Currency service is not available", "error", err)
+		os.Exit(1)
+	}
+
+	// create a new database instance
+	db := data.NewProductsDB(l, currencyClient)
+
+	ph := handlers.NewProducts(l, v, db)
+
+	// create a new router
 	sm := mux.NewRouter()
 
-	// Handlers for API
+	// handlers for API
 	getRouter := sm.Methods(http.MethodGet).Subrouter()
+	getRouter.HandleFunc("/products", ph.ListAll).Queries("currency", "{[A-Z]}{3}}")
 	getRouter.HandleFunc("/products", ph.ListAll)
+
+	getRouter.HandleFunc("/products/{id:[0-9]+}", ph.ListSingle).Queries("currency", "{[A-Z]}{3}}")
 	getRouter.HandleFunc("/products/{id:[0-9]+}", ph.ListSingle)
 
 	putRouter := sm.Methods(http.MethodPut).Subrouter()
@@ -68,10 +98,10 @@ func main() {
 		gohandlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization"}),
 	)
 
-	// Apply CORS middleware to our router
+	// apply CORS middleware to our router
 	corsRouter := corsHandler(sm)
 
-	// Create a new server
+	// create a new server
 	s := &http.Server{
 		Addr:         *bindAddress,      // Configure the bind address
 		Handler:      corsRouter,        // Use the CORS-enabled router
@@ -81,7 +111,7 @@ func main() {
 		IdleTimeout:  120 * time.Second, // Max time for connections using TCP Keep-Alive
 	}
 
-	// Start the server
+	// start the server
 	go func() {
 		l.Info("Starting server", "bind_address", *bindAddress)
 
@@ -92,7 +122,7 @@ func main() {
 		}
 	}()
 
-	// Trap sigterm or interrupt and gracefully shutdown the server
+	// trap sigterm or interrupt and gracefully shutdown the server
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	signal.Notify(c, os.Kill)
@@ -101,8 +131,20 @@ func main() {
 	sig := <-c
 	l.Info("Shutting down the server", "signal", sig)
 
-	// Gracefully shutdown the server, waiting max 30 seconds for current operations to complete
+	// gracefully shutdown the server, waiting max 30 seconds for current operations to complete
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	s.Shutdown(ctx)
+}
+
+func checkCurrencyService(client protos.CurrencyClient) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := client.GetRate(ctx, &protos.RateRequest{
+		Base:        protos.Currencies_EUR,
+		Destination: protos.Currencies_USD,
+	})
+
+	return err
 }

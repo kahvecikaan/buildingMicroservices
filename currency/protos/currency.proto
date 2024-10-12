@@ -1,10 +1,15 @@
 syntax = "proto3";
 
-option go_package = "github.com/kahvecikaan/buildingMicroservices/currency/protos/currency";
+package currency;
+
+option go_package = "github.com/kahvecikaan/buildingMicroservices/currency/protos";
 
 service Currency {
   // GetRate returns the exchange rate for the two provided currency codes
   rpc GetRate(RateRequest) returns (RateResponse);
+  // SubscribeRates allows a client to subscribe for changes in an exchange rate
+  // when the rate changes a response will be sent
+  rpc SubscribeRates(stream RateRequest) returns (stream RateResponse);
 }
 
 // RateRequest defines the request for a GetRate call
@@ -15,46 +20,52 @@ message RateRequest {
   Currencies Destination = 2;
 }
 
-// RateResponse is the response from a GetRate call, it contains
+// RateResponse is the response from a GetRate call, it contains base, destination, and
 // rate which is a floating point number and can be used to convert between the
 // two currencies specified in the request.
 message RateResponse {
-  double rate = 1;
+  // Base is the base currency code for the rate
+  Currencies Base = 1;
+  // Destination is the destination currency code for the rate
+  Currencies Destination = 2;
+  // Rate is the returned currency rate
+  double Rate = 3;
 }
 
 // Currencies is an enum which represents the allowed currencies for the API
 enum Currencies {
-  EUR=0;
-  USD=1;
-  JPY=2;
-  BGN=3;
-  CZK=4;
-  DKK=5;
-  GBP=6;
-  HUF=7;
-  PLN=8;
-  RON=9;
-  SEK=10;
-  CHF=11;
-  ISK=12;
-  NOK=13;
-  HRK=14;
-  RUB=15;
-  TRY=16;
-  AUD=17;
-  BRL=18;
-  CAD=19;
-  CNY=20;
-  HKD=21;
-  IDR=22;
-  ILS=23;
-  INR=24;
-  KRW=25;
-  MXN=26;
-  MYR=27;
-  NZD=28;
-  PHP=29;
-  SGD=30;
-  THB=31;
-  ZAR=32;
+  UNKNOWN = 0;
+  EUR = 1;
+  USD = 2;
+  JPY = 3;
+  BGN = 4;
+  CZK = 5;
+  DKK = 6;
+  GBP = 7;
+  HUF = 8;
+  PLN = 9;
+  RON = 10;
+  SEK = 11;
+  CHF = 12;
+  ISK = 13;
+  NOK = 14;
+  HRK = 15;
+  RUB = 16;
+  TRY = 17;
+  AUD = 18;
+  BRL = 19;
+  CAD = 20;
+  CNY = 21;
+  HKD = 22;
+  IDR = 23;
+  ILS = 24;
+  INR = 25;
+  KRW = 26;
+  MXN = 27;
+  MYR = 28;
+  NZD = 29;
+  PHP = 30;
+  SGD = 31;
+  THB = 32;
+  ZAR = 33;
 }

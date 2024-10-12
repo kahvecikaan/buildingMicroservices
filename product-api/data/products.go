@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/hashicorp/go-hclog"
-	protos "github.com/kahvecikaan/buildingMicroservices/currency/protos/currency"
+	"github.com/kahvecikaan/buildingMicroservices/currency/protos"
 )
 
 // ErrProductNotFound is an error raised when a product can't be found in the database
@@ -50,10 +50,38 @@ type Products []*Product
 type ProductsDB struct {
 	log            hclog.Logger
 	currencyClient protos.CurrencyClient
+	rates          map[string]float64
+	stream         protos.Currency_SubscribeRatesClient
 }
 
 func NewProductsDB(log hclog.Logger, c protos.CurrencyClient) *ProductsDB {
-	return &ProductsDB{log, c}
+	pb := &ProductsDB{log, c, make(map[string]float64), nil}
+
+	go pb.handleUpdates()
+
+	return pb
+}
+
+func (p *ProductsDB) handleUpdates() {
+	stream, err := p.currencyClient.SubscribeRates(context.Background())
+	if err != nil {
+		p.log.Error("Unable to subscribe for rates", "error", err)
+	}
+
+	p.stream = stream
+
+	for {
+		rr, err := stream.Recv()
+		p.log.Info("Received update from server", "dest", rr.GetDestination().String())
+
+		if err != nil {
+			p.log.Error("Error receiving message from stream", "error", err)
+			return
+		}
+
+		p.rates[rr.Destination.String()] = rr.Rate
+	}
+
 }
 
 // GetProducts returns all products from the database
@@ -155,12 +183,23 @@ func getNextID() int {
 }
 
 func (p *ProductsDB) getRate(destination string) (float64, error) {
+	// if cached, return
+	if r, ok := p.rates[destination]; ok {
+		return r, nil
+	}
+
 	rr := &protos.RateRequest{
 		Base:        protos.Currencies(protos.Currencies_value["EUR"]), // base rate is always EUR
 		Destination: protos.Currencies(protos.Currencies_value[destination]),
 	}
 
+	// get initial rate
 	resp, err := p.currencyClient.GetRate(context.Background(), rr)
+	p.rates[destination] = resp.Rate // update cache
+
+	// subscribe for updates
+	p.stream.Send(rr)
+
 	return resp.Rate, err
 }
 

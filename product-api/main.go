@@ -6,7 +6,7 @@ import (
 	gohandlers "github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/hashicorp/go-hclog"
-	protos "github.com/kahvecikaan/buildingMicroservices/currency/protos/currency"
+	"github.com/kahvecikaan/buildingMicroservices/currency/protos"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/data"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/handlers"
 	"github.com/nicholasjackson/env"

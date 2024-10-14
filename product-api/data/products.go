@@ -55,62 +55,63 @@ type ProductsDB struct {
 }
 
 func NewProductsDB(log hclog.Logger, c protos.CurrencyClient) *ProductsDB {
-	pb := &ProductsDB{log, c, make(map[string]float64), nil}
+	db := &ProductsDB{log, c, make(map[string]float64), nil}
 
-	go pb.handleUpdates()
+	go db.handleUpdates()
 
-	return pb
+	return db
 }
 
-func (p *ProductsDB) handleUpdates() {
-	stream, err := p.currencyClient.SubscribeRates(context.Background())
+func (db *ProductsDB) handleUpdates() {
+	// establish the bidirectional stream
+	stream, err := db.currencyClient.SubscribeRates(context.Background())
 	if err != nil {
-		p.log.Error("Unable to subscribe for rates", "error", err)
+		db.log.Error("Unable to subscribe for rates", "error", err)
 	}
 
-	p.stream = stream
+	db.stream = stream
 
 	for {
-		rr, err := stream.Recv()
-		p.log.Info("Received update from server", "dest", rr.GetDestination().String())
+		rateResponse, err := stream.Recv()
+		db.log.Info("Received update from server", "dest", rateResponse.GetDestination().String())
 
 		if err != nil {
-			p.log.Error("Error receiving message from stream", "error", err)
+			db.log.Error("Error receiving message from stream", "error", err)
 			return
 		}
 
-		p.rates[rr.Destination.String()] = rr.Rate
+		db.rates[rateResponse.Destination.String()] = rateResponse.Rate
 	}
 
 }
 
 // GetProducts returns all products from the database
-func (p *ProductsDB) GetProducts(currency string) (Products, error) {
+func (db *ProductsDB) GetProducts(currency string) (Products, error) {
 	if currency == "" {
 		return productList, nil
 	}
 
-	rate, err := p.getRate(currency)
+	rate, err := db.getRate(currency)
 	if err != nil {
-		p.log.Error("Unable to get the rate", "currency", currency, "error", err)
+		db.log.Error("Unable to get the rate", "currency", currency, "error", err)
 		return nil, err
 	}
 
-	pr := Products{}
+	prodList := Products{}
 	for _, p := range productList {
 		// a copy of p
 		np := *p
 		np.Price = np.Price * rate
-		pr = append(pr, &np)
+		prodList = append(prodList, &np)
 	}
 
-	return pr, nil
+	return prodList, nil
 }
 
 // GetProductByID returns a single product which matches the id from the
 // database.
 // If a product is not found this function returns a ProductNotFound error
-func (p *ProductsDB) GetProductByID(id int, currency string) (*Product, error) {
+func (db *ProductsDB) GetProductByID(id int, currency string) (*Product, error) {
 	i := findIndexByProductID(id)
 	if i == -1 {
 		return nil, ErrProductNotFound
@@ -120,9 +121,9 @@ func (p *ProductsDB) GetProductByID(id int, currency string) (*Product, error) {
 		return productList[i], nil
 	}
 
-	rate, err := p.getRate(currency)
+	rate, err := db.getRate(currency)
 	if err != nil {
-		p.log.Error("Unable to get the rate", "currency", currency, "error", err)
+		db.log.Error("Unable to get the rate", "currency", currency, "error", err)
 		return nil, err
 	}
 
@@ -136,7 +137,7 @@ func (p *ProductsDB) GetProductByID(id int, currency string) (*Product, error) {
 // item.
 // If a product with the given id does not exist in the database
 // this function returns a ProductNotFound error
-func (p *ProductsDB) UpdateProduct(pr *Product) error {
+func (db *ProductsDB) UpdateProduct(pr *Product) error {
 	i := findIndexByProductID(pr.ID)
 	if i == -1 {
 		return ErrProductNotFound
@@ -149,12 +150,12 @@ func (p *ProductsDB) UpdateProduct(pr *Product) error {
 }
 
 // AddProduct adds a product to the database
-func (p *ProductsDB) AddProduct(pr *Product) {
+func (db *ProductsDB) AddProduct(pr *Product) {
 	pr.ID = getNextID()
 	productList = append(productList, pr)
 }
 
-func (p *ProductsDB) DeleteProduct(id int) error {
+func (db *ProductsDB) DeleteProduct(id int) error {
 	i := findIndexByProductID(id)
 	if i == -1 {
 		return ErrProductNotFound
@@ -182,23 +183,28 @@ func getNextID() int {
 	return lp.ID + 1
 }
 
-func (p *ProductsDB) getRate(destination string) (float64, error) {
+func (db *ProductsDB) getRate(destination string) (float64, error) {
 	// if cached, return
-	if r, ok := p.rates[destination]; ok {
-		return r, nil
+	if rate, ok := db.rates[destination]; ok {
+		return rate, nil
 	}
 
-	rr := &protos.RateRequest{
-		Base:        protos.Currencies(protos.Currencies_value["EUR"]), // base rate is always EUR
+	rateRequest := &protos.RateRequest{
+		// base rate is always EUR (since products are priced in EUR by default)
+		Base:        protos.Currencies(protos.Currencies_value["EUR"]),
 		Destination: protos.Currencies(protos.Currencies_value[destination]),
 	}
 
 	// get initial rate
-	resp, err := p.currencyClient.GetRate(context.Background(), rr)
-	p.rates[destination] = resp.Rate // update cache
+	resp, err := db.currencyClient.GetRate(context.Background(), rateRequest)
+	db.rates[destination] = resp.Rate // update cache
 
 	// subscribe for updates
-	p.stream.Send(rr)
+	err = db.stream.Send(rateRequest)
+	if err != nil {
+		db.log.Error("Error subscribing for updates", "error", err)
+		return -1, err
+	}
 
 	return resp.Rate, err
 }

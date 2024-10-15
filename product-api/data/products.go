@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/hashicorp/go-hclog"
 	"github.com/kahvecikaan/buildingMicroservices/currency/protos"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"sync"
 	"time"
 )
@@ -242,6 +244,15 @@ func getNextID() int {
 }
 
 func (db *ProductsDB) getRate(destination string) (float64, error) {
+	// Validate the destination currency
+	currencyValue, ok := protos.Currencies_value[destination]
+	if !ok {
+		errMsg := fmt.Sprintf("Invalid destination currency: %s", destination)
+		db.log.Error(errMsg)
+		return -1, fmt.Errorf(errMsg)
+	}
+	destinationCurrency := protos.Currencies(currencyValue)
+
 	// if cached, return
 	if rate, ok := db.rates[destination]; ok {
 		return rate, nil
@@ -250,21 +261,43 @@ func (db *ProductsDB) getRate(destination string) (float64, error) {
 	rateRequest := &protos.RateRequest{
 		// base rate is always EUR (since products are priced in EUR by default)
 		Base:        protos.Currencies(protos.Currencies_value["EUR"]),
-		Destination: protos.Currencies(protos.Currencies_value[destination]),
+		Destination: destinationCurrency,
 	}
 
-	// get initial rate
+	// get initial rate via unary RPC
 	resp, err := db.currencyClient.GetRate(context.Background(), rateRequest)
+	if err != nil {
+		// convert the gRPC error message
+		grpcErr, ok := status.FromError(err)
+		if !ok {
+			// not a gRPC error
+			db.log.Error("Non-gRPC error calling GetRate", "error", err)
+			return -1, err
+		}
+
+		// handle specific gRPC error codes
+		switch grpcErr.Code() {
+		case codes.InvalidArgument:
+			db.log.Error("Invalid arguments when calling GetRate", "error", grpcErr.Message())
+			return -1, fmt.Errorf("invalid argument: %s", grpcErr.Message())
+		case codes.NotFound:
+			db.log.Error("Rate not found", "error", grpcErr.Message())
+			return -1, fmt.Errorf("rate not found: %s", grpcErr.Message())
+		default:
+			db.log.Error("Error calling GetRate", grpcErr.Message())
+			return -1, fmt.Errorf("error getting rate: %s", grpcErr.Message())
+		}
+	}
+
 	db.rates[destination] = resp.Rate // update cache
 
 	// subscribe for updates
 	err = db.stream.Send(rateRequest)
 	if err != nil {
-		db.log.Error("Error subscribing for updates", "error", err)
+		db.log.Error("Error subscribing updates", "error", err)
 		return -1, err
 	}
-
-	return resp.Rate, err
+	return resp.Rate, nil
 }
 
 var productList = []*Product{

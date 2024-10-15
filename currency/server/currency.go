@@ -2,11 +2,12 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"github.com/hashicorp/go-hclog"
 	"github.com/kahvecikaan/buildingMicroservices/currency/data"
 	"github.com/kahvecikaan/buildingMicroservices/currency/protos"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 	"io"
 	"sync"
 	"time"
@@ -146,19 +147,30 @@ func (c *Currency) getSubscriptionsCopy() map[protos.Currency_SubscribeRatesServ
 func (c *Currency) GetRate(ctx context.Context, rr *protos.RateRequest) (*protos.RateResponse, error) {
 	c.log.Info("Handle request response for GetRate", "base", rr.GetBase(), "dest", rr.GetDestination())
 
-	// Validate Base currency
+	// validate parameters: base currency cannot be the same as destination
+	if rr.Base == rr.Destination {
+		err := status.Errorf(
+			codes.InvalidArgument,
+			"Base currency %s cannot be equal to destination currency %s",
+			rr.Base.String(),
+			rr.Base.String(),
+		)
+
+		return nil, err
+	}
+	// validate Base currency
 	if rr.GetBase() == protos.Currencies_UNKNOWN {
-		return nil, fmt.Errorf("base currency is not specified")
+		return nil, status.Errorf(codes.InvalidArgument, "Base currency is not specified")
 	}
 
-	// Validate Destination currency
+	// validate Destination currency
 	if rr.GetDestination() == protos.Currencies_UNKNOWN {
-		return nil, fmt.Errorf("destination currency is not specified")
+		return nil, status.Errorf(codes.InvalidArgument, "Destination currency is not specified")
 	}
 
 	rate, err := c.rates.GetRate(rr.GetBase().String(), rr.GetDestination().String())
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.NotFound, "Exchange rate not found")
 	}
 
 	return &protos.RateResponse{
@@ -180,7 +192,7 @@ func (c *Currency) SubscribeRates(clientStream protos.Currency_SubscribeRatesSer
 		if err != nil {
 			c.log.Error("Unable to read from client", "error", err)
 			c.removeSubscription(clientStream)
-			return err
+			return status.Errorf(codes.Internal, "Error receiving from client %v", err)
 		}
 
 		c.log.Info("Handle client request", "request_base", rateRequest.GetBase(), "request_dest", rateRequest.GetDestination())

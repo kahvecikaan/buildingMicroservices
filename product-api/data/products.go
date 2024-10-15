@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/hashicorp/go-hclog"
 	"github.com/kahvecikaan/buildingMicroservices/currency/protos"
+	"sync"
+	"time"
 )
 
 // ErrProductNotFound is an error raised when a product can't be found in the database
@@ -52,10 +54,16 @@ type ProductsDB struct {
 	currencyClient protos.CurrencyClient
 	rates          map[string]float64
 	stream         protos.Currency_SubscribeRatesClient
+	closeCh        chan struct{}
 }
 
 func NewProductsDB(log hclog.Logger, c protos.CurrencyClient) *ProductsDB {
-	db := &ProductsDB{log, c, make(map[string]float64), nil}
+	db := &ProductsDB{
+		log:            log,
+		currencyClient: c,
+		rates:          make(map[string]float64),
+		closeCh:        make(chan struct{}),
+	}
 
 	go db.handleUpdates()
 
@@ -71,18 +79,61 @@ func (db *ProductsDB) handleUpdates() {
 
 	db.stream = stream
 
-	for {
-		rateResponse, err := stream.Recv()
-		db.log.Info("Received update from server", "dest", rateResponse.GetDestination().String())
+	// start a ticker to send heartbeat messages every minute
+	heartbeatTicker := time.NewTicker(1 * time.Minute)
+	defer heartbeatTicker.Stop()
 
-		if err != nil {
-			db.log.Error("Error receiving message from stream", "error", err)
-			return
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-heartbeatTicker.C:
+				err := db.sendHeartbeat()
+				if err != nil {
+					db.log.Info("Error sending heartbeat", "error", err)
+				}
+			case <-db.closeCh:
+				return
+			}
 		}
+	}()
 
-		db.rates[rateResponse.Destination.String()] = rateResponse.Rate
+	for {
+		select {
+		case <-db.closeCh:
+			// Exit if close signal is received
+			return
+		default:
+			rateResponse, err := stream.Recv()
+			if err != nil {
+				db.log.Error("Error receiving message from stream", "error", err)
+				return
+			}
+
+			db.log.Info("Received update from server", "dest", rateResponse.GetDestination().String())
+			db.rates[rateResponse.Destination.String()] = rateResponse.Rate
+		}
 	}
 
+	wg.Wait() // wait for heartbeat routine to finish
+}
+
+func (db *ProductsDB) sendHeartbeat() error {
+	heartbeat := &protos.RateRequest{
+		Base:        protos.Currencies_UNKNOWN,
+		Destination: protos.Currencies_UNKNOWN,
+	}
+
+	err := db.stream.Send(heartbeat)
+	if err != nil {
+		return err
+	}
+
+	db.log.Info("Sent heartbeat to server")
+	return nil
 }
 
 // GetProducts returns all products from the database
@@ -164,6 +215,13 @@ func (db *ProductsDB) DeleteProduct(id int) error {
 	productList = append(productList[:i], productList[i+1:]...)
 
 	return nil
+}
+
+func (db *ProductsDB) Close() {
+	close(db.closeCh)
+	if db.stream != nil {
+		db.stream.CloseSend()
+	}
 }
 
 // findIndex finds the index of a product in the database

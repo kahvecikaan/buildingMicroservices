@@ -131,6 +131,9 @@ func main() {
 	sig := <-c
 	l.Info("Shutting down the server", "signal", sig)
 
+	// close the ProductsDB instance
+	db.Close()
+
 	// gracefully shutdown the server, waiting max 30 seconds for current operations to complete
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

@@ -65,10 +65,14 @@ func (c *Currency) handleUpdates() {
 					}
 
 					// send the updated rate to client
-					err = clientStream.Send(&protos.RateResponse{
-						Base:        rateRequest.Base,
-						Destination: rateRequest.Destination,
-						Rate:        rate,
+					err = clientStream.Send(&protos.StreamingRateResponse{
+						Message: &protos.StreamingRateResponse_RateResponse{
+							RateResponse: &protos.RateResponse{
+								Base:        rateRequest.Base,
+								Destination: rateRequest.Destination,
+								Rate:        rate,
+							},
+						},
 					})
 
 					if err != nil {
@@ -200,6 +204,64 @@ func (c *Currency) SubscribeRates(clientStream protos.Currency_SubscribeRatesSer
 		if isHeartbeat(rateRequest) {
 			c.updateClientActivity(clientStream)
 		} else {
+			// validate the RateRequest
+			errMsg := c.validateRateRequest(rateRequest)
+			if errMsg != "" {
+				c.log.Error("Invalid RateRequest", "error", errMsg)
+
+				// create a google.rpc.Status error message
+				grpcError := status.New(codes.InvalidArgument, errMsg)
+				grpcErrorWithDetails, err := grpcError.WithDetails(rateRequest)
+				if err != nil {
+					c.log.Error("Failed to add details to error", "error", err)
+					// fallback to sending error without details
+					grpcErrorWithDetails = grpcError
+				}
+
+				// send error response within the stream
+				err = clientStream.Send(&protos.StreamingRateResponse{
+					Message: &protos.StreamingRateResponse_Error{
+						Error: grpcErrorWithDetails.Proto(),
+					},
+				})
+
+				if err != nil {
+					c.log.Error("Failed to send error response", "error", err)
+					c.removeSubscription(clientStream)
+					return status.Errorf(codes.Internal, "Failed to send error response: %v", err)
+				}
+				continue // skip adding the subscription
+			}
+
+			// check for duplicate subscription
+			if c.subscriptionExists(clientStream, rateRequest) {
+				errMsg := "Subscription already exists for this currency pair!"
+				c.log.Error(errMsg)
+
+				// create a google.rpc.Status error message
+				grpcError := status.New(codes.InvalidArgument, errMsg)
+				grpcErrorWithDetails, err := grpcError.WithDetails(rateRequest)
+				if err != nil {
+					c.log.Error("Failed to add details to error", "error", err)
+					// fallback to sending error without details
+					grpcErrorWithDetails = grpcError
+				}
+
+				// send error response within the stream
+				err = clientStream.Send(&protos.StreamingRateResponse{
+					Message: &protos.StreamingRateResponse_Error{
+						Error: grpcErrorWithDetails.Proto(),
+					},
+				})
+
+				if err != nil {
+					c.log.Error("Failed to send error response", "error", err)
+					c.removeSubscription(clientStream)
+					return status.Errorf(codes.Internal, "Failed to send error response %v", err)
+				}
+				continue
+			}
+
 			c.addSubscription(clientStream, rateRequest)
 		}
 	}
@@ -220,4 +282,36 @@ func (c *Currency) updateClientActivity(clientStream protos.Currency_SubscribeRa
 func isHeartbeat(rr *protos.RateRequest) bool {
 	// Assuming that a RateRequest with UNKNOWN currencies is a heartbeat
 	return rr.GetBase() == protos.Currencies_UNKNOWN && rr.GetDestination() == protos.Currencies_UNKNOWN
+}
+
+func (c *Currency) validateRateRequest(rr *protos.RateRequest) string {
+	if rr.GetBase() == protos.Currencies_UNKNOWN {
+		return "Base currency is not specified"
+	}
+	if rr.GetDestination() == protos.Currencies_UNKNOWN {
+		return "Destination currency is not specified"
+	}
+	if rr.GetBase() == rr.GetDestination() {
+		return "Base currency cannot be the same as destination currency"
+	}
+	return ""
+}
+
+// subscriptionExists checks if the client has already subscribed to a particular rate request
+func (c *Currency) subscriptionExists(
+	clientStream protos.Currency_SubscribeRatesServer,
+	rateRequest *protos.RateRequest) bool {
+	c.subsMutex.RLock()
+	defer c.subsMutex.RUnlock()
+
+	if sub, exists := c.subscriptions[clientStream]; exists {
+		for _, existingRequest := range sub.rateRequests {
+			if existingRequest.GetBase() == rateRequest.GetBase() &&
+				existingRequest.GetDestination() == rateRequest.GetDestination() {
+				return true
+			}
+		}
+	}
+
+	return false
 }

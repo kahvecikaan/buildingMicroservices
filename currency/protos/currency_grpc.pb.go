@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v5.28.2
-// source: protos/currency.proto
+// source: currency.proto
 
 package protos
 
@@ -31,7 +31,7 @@ type CurrencyClient interface {
 	GetRate(ctx context.Context, in *RateRequest, opts ...grpc.CallOption) (*RateResponse, error)
 	// SubscribeRates allows a client to subscribe for changes in an exchange rate
 	// when the rate changes a response will be sent
-	SubscribeRates(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RateRequest, RateResponse], error)
+	SubscribeRates(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RateRequest, StreamingRateResponse], error)
 }
 
 type currencyClient struct {
@@ -52,18 +52,18 @@ func (c *currencyClient) GetRate(ctx context.Context, in *RateRequest, opts ...g
 	return out, nil
 }
 
-func (c *currencyClient) SubscribeRates(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RateRequest, RateResponse], error) {
+func (c *currencyClient) SubscribeRates(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RateRequest, StreamingRateResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &Currency_ServiceDesc.Streams[0], Currency_SubscribeRates_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[RateRequest, RateResponse]{ClientStream: stream}
+	x := &grpc.GenericClientStream[RateRequest, StreamingRateResponse]{ClientStream: stream}
 	return x, nil
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Currency_SubscribeRatesClient = grpc.BidiStreamingClient[RateRequest, RateResponse]
+type Currency_SubscribeRatesClient = grpc.BidiStreamingClient[RateRequest, StreamingRateResponse]
 
 // CurrencyServer is the server API for Currency service.
 // All implementations must embed UnimplementedCurrencyServer
@@ -73,7 +73,7 @@ type CurrencyServer interface {
 	GetRate(context.Context, *RateRequest) (*RateResponse, error)
 	// SubscribeRates allows a client to subscribe for changes in an exchange rate
 	// when the rate changes a response will be sent
-	SubscribeRates(grpc.BidiStreamingServer[RateRequest, RateResponse]) error
+	SubscribeRates(grpc.BidiStreamingServer[RateRequest, StreamingRateResponse]) error
 	mustEmbedUnimplementedCurrencyServer()
 }
 
@@ -87,7 +87,7 @@ type UnimplementedCurrencyServer struct{}
 func (UnimplementedCurrencyServer) GetRate(context.Context, *RateRequest) (*RateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetRate not implemented")
 }
-func (UnimplementedCurrencyServer) SubscribeRates(grpc.BidiStreamingServer[RateRequest, RateResponse]) error {
+func (UnimplementedCurrencyServer) SubscribeRates(grpc.BidiStreamingServer[RateRequest, StreamingRateResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method SubscribeRates not implemented")
 }
 func (UnimplementedCurrencyServer) mustEmbedUnimplementedCurrencyServer() {}
@@ -130,11 +130,11 @@ func _Currency_GetRate_Handler(srv interface{}, ctx context.Context, dec func(in
 }
 
 func _Currency_SubscribeRates_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(CurrencyServer).SubscribeRates(&grpc.GenericServerStream[RateRequest, RateResponse]{ServerStream: stream})
+	return srv.(CurrencyServer).SubscribeRates(&grpc.GenericServerStream[RateRequest, StreamingRateResponse]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Currency_SubscribeRatesServer = grpc.BidiStreamingServer[RateRequest, RateResponse]
+type Currency_SubscribeRatesServer = grpc.BidiStreamingServer[RateRequest, StreamingRateResponse]
 
 // Currency_ServiceDesc is the grpc.ServiceDesc for Currency service.
 // It's only intended for direct use with grpc.RegisterService,
@@ -156,5 +156,5 @@ var Currency_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "protos/currency.proto",
+	Metadata: "currency.proto",
 }

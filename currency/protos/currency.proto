@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package currency;
 
+import "google/rpc/status.proto";
+
 option go_package = "github.com/kahvecikaan/buildingMicroservices/currency/protos";
 
 service Currency {
@@ -9,7 +11,7 @@ service Currency {
   rpc GetRate(RateRequest) returns (RateResponse);
   // SubscribeRates allows a client to subscribe for changes in an exchange rate
   // when the rate changes a response will be sent
-  rpc SubscribeRates(stream RateRequest) returns (stream RateResponse);
+  rpc SubscribeRates(stream RateRequest) returns (stream StreamingRateResponse);
 }
 
 // RateRequest defines the request for a GetRate call
@@ -30,6 +32,13 @@ message RateResponse {
   Currencies Destination = 2;
   // Rate is the returned currency rate
   double Rate = 3;
+}
+
+message StreamingRateResponse {
+  oneof message {
+    RateResponse rate_response = 1;
+    google.rpc.Status error = 2;
+  }
 }
 
 // Currencies is an enum which represents the allowed currencies for the API

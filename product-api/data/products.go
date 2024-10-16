@@ -7,6 +7,7 @@ import (
 	"github.com/kahvecikaan/buildingMicroservices/currency/protos"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"io"
 	"sync"
 	"time"
 )
@@ -57,6 +58,7 @@ type ProductsDB struct {
 	rates          map[string]float64
 	stream         protos.Currency_SubscribeRatesClient
 	closeCh        chan struct{}
+	ratesMutex     sync.RWMutex
 }
 
 func NewProductsDB(log hclog.Logger, c protos.CurrencyClient) *ProductsDB {
@@ -77,6 +79,7 @@ func (db *ProductsDB) handleUpdates() {
 	stream, err := db.currencyClient.SubscribeRates(context.Background())
 	if err != nil {
 		db.log.Error("Unable to subscribe for rates", "error", err)
+		return
 	}
 
 	db.stream = stream
@@ -106,17 +109,45 @@ func (db *ProductsDB) handleUpdates() {
 	for {
 		select {
 		case <-db.closeCh:
-			// Exit if close signal is received
+			// exit if close signal is received
 			return
 		default:
-			rateResponse, err := stream.Recv()
+			response, err := stream.Recv()
+			if err == io.EOF {
+				db.log.Info("Server closed the stream")
+				return
+			}
 			if err != nil {
-				db.log.Error("Error receiving message from stream", "error", err)
+				db.log.Error("Error receiving message from the stream", "error", err)
 				return
 			}
 
-			db.log.Info("Received update from server", "dest", rateResponse.GetDestination().String())
-			db.rates[rateResponse.Destination.String()] = rateResponse.Rate
+			switch msg := response.Message.(type) {
+			case *protos.StreamingRateResponse_RateResponse:
+				rateResponse := msg.RateResponse
+				db.log.Info(
+					"Received rate update",
+					"destination", rateResponse.GetDestination().String(),
+					"rate", rateResponse.GetRate())
+
+				// update the rates in a thread-safe manner
+				db.ratesMutex.Lock()
+				db.rates[rateResponse.Destination.String()] = rateResponse.Rate
+				db.ratesMutex.Unlock()
+
+			case *protos.StreamingRateResponse_Error:
+				errorStatus := msg.Error
+				db.log.Error("Received error from server", "error", errorStatus.GetMessage())
+
+				// handle specific error codes if needed
+				grpcErr := status.FromProto(errorStatus)
+				switch grpcErr.Code() {
+				case codes.InvalidArgument:
+					db.log.Error("Invalid argument error received", "details", grpcErr.Message())
+				default:
+					db.log.Error("Error received", "code", grpcErr.Code(), "message", grpcErr.Message())
+				}
+			}
 		}
 	}
 
@@ -222,7 +253,9 @@ func (db *ProductsDB) DeleteProduct(id int) error {
 func (db *ProductsDB) Close() {
 	close(db.closeCh)
 	if db.stream != nil {
-		db.stream.CloseSend()
+		if err := db.stream.CloseSend(); err != nil {
+			db.log.Error("Error closing stream", "error", err)
+		}
 	}
 }
 
@@ -244,7 +277,7 @@ func getNextID() int {
 }
 
 func (db *ProductsDB) getRate(destination string) (float64, error) {
-	// Validate the destination currency
+	// validate the destination currency
 	currencyValue, ok := protos.Currencies_value[destination]
 	if !ok {
 		errMsg := fmt.Sprintf("Invalid destination currency: %s", destination)
@@ -253,8 +286,11 @@ func (db *ProductsDB) getRate(destination string) (float64, error) {
 	}
 	destinationCurrency := protos.Currencies(currencyValue)
 
-	// if cached, return
-	if rate, ok := db.rates[destination]; ok {
+	// check if rate is cached
+	db.ratesMutex.RLock()
+	rate, ok := db.rates[destination]
+	db.ratesMutex.RUnlock()
+	if ok {
 		return rate, nil
 	}
 
@@ -289,12 +325,28 @@ func (db *ProductsDB) getRate(destination string) (float64, error) {
 		}
 	}
 
-	db.rates[destination] = resp.Rate // update cache
+	// update the rate in a thread-safe manner
+	db.ratesMutex.Lock()
+	db.rates[destination] = resp.Rate
+	db.ratesMutex.Unlock()
 
 	// subscribe for updates
 	err = db.stream.Send(rateRequest)
 	if err != nil {
-		db.log.Error("Error subscribing updates", "error", err)
+		// handle gRPC errors when sending subscription
+		db.log.Error("Error subscribing for updates", "error", err)
+		grpcErr, ok := status.FromError(err)
+		if ok {
+			switch grpcErr.Code() {
+			case codes.InvalidArgument:
+				db.log.Error("Invalid arguments when subscribing", "error", grpcErr.Message())
+				return -1, fmt.Errorf("invalid argument: %s", grpcErr.Message())
+			default:
+				db.log.Error("Error subscribing for updates", "code", grpcErr.Code(), "error", grpcErr.Message())
+				return -1, fmt.Errorf("error subscribing for updates: %s", grpcErr.Message())
+			}
+		}
+
 		return -1, err
 	}
 	return resp.Rate, nil

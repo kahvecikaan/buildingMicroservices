@@ -1,7 +1,7 @@
 .PHONY: protos
 
 protos:
-	protoc -I=. \
-		--go_out=paths=source_relative:. \
-		--go-grpc_out=paths=source_relative:. \
+	protoc -I=protos \
+		--go_out=paths=source_relative:protos \
+		--go-grpc_out=paths=source_relative:protos \
 		protos/currency.proto

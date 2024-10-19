@@ -7,20 +7,27 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 )
 
 type ExchangeRates struct {
 	log   hclog.Logger
 	rates map[string]float64
+	mutex sync.RWMutex
 }
 
 func NewRates(logger hclog.Logger) (*ExchangeRates, error) {
-	er := &ExchangeRates{logger, map[string]float64{}}
+	er := &ExchangeRates{
+		log:   logger,
+		rates: map[string]float64{}}
 
 	err := er.getRates()
+	if err != nil {
+		return nil, err
+	}
 
-	return er, err
+	return er, nil
 }
 
 func (e *ExchangeRates) GetRate(base, dest string) (float64, error) {
@@ -52,6 +59,7 @@ func (e *ExchangeRates) MonitorRates(interval time.Duration) chan struct{} {
 			case <-ticker.C:
 				// just add a random difference to the rate and return it
 				// this simulates the fluctuations in currency rates
+				e.mutex.Lock()
 				for k, v := range e.rates {
 					// change can be 10% of original value
 					change := rand.Float64() / 10
@@ -69,6 +77,7 @@ func (e *ExchangeRates) MonitorRates(interval time.Duration) chan struct{} {
 					// modify the rate
 					e.rates[k] = v * change
 				}
+				e.mutex.Unlock()
 
 				// notify updates, this will block unless there is a listener on the other end
 				ret <- struct{}{}
@@ -98,6 +107,8 @@ func (e *ExchangeRates) getRates() error {
 		return err
 	}
 
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
 	for _, cube := range parsedCubes.CubeData {
 		rate, err := strconv.ParseFloat(cube.Rate, 64)
 		if err != nil {
@@ -109,6 +120,18 @@ func (e *ExchangeRates) getRates() error {
 
 	e.rates["EUR"] = 1
 	return nil
+}
+
+// GetAllRates returns a copy of all exchange rates in a thread-safe manner
+func (e *ExchangeRates) GetAllRates() map[string]float64 {
+	e.mutex.RLock()
+	defer e.mutex.RUnlock()
+
+	ratesCopy := make(map[string]float64)
+	for currencyCode, rate := range e.rates {
+		ratesCopy[currencyCode] = rate
+	}
+	return ratesCopy
 }
 
 type Cubes struct {

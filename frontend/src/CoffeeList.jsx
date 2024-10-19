@@ -32,7 +32,7 @@ function CoffeeList() {
                     {products.map((product, index) => (
                         <tr key={index}>
                             <td>{product.name}</td>
-                            <td>${product.price.toFixed(2)}</td>
+                            <td>£{product.price.toFixed(2)}</td>
                             <td>{product.sku}</td>
                         </tr>
                     ))}

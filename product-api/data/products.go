@@ -184,6 +184,7 @@ func (db *ProductsDB) publishPriceUpdates(currency string) {
 		update := events.PriceUpdate{
 			ProductID: product.ID,
 			NewPrice:  newPrice,
+			Currency:  currency,
 		}
 
 		// publish the event

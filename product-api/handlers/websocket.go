@@ -46,42 +46,55 @@ func (wsh *WebSocketHandler) HandleWebSocket(rw http.ResponseWriter, r *http.Req
 	subscriber := wsh.eventBus.Subscribe()
 	defer wsh.eventBus.Unsubscribe(subscriber)
 
-	// handle incoming messages if needed
-	go wsh.readPump(conn)
+	// create a done channel to signal when the connection is closed
+	done := make(chan struct{})
+
+	// handle incoming messages
+	go wsh.readPump(conn, done)
 
 	// listen for events coming through the subscriber channel
-	for event := range subscriber {
-		// determine the type of event
-		var message WebSocketMessage
+	for {
+		// select statement blocks until one of its cases is ready
+		select {
+		case event := <-subscriber:
+			// determine the type of the event
+			var message WebSocketMessage
 
-		switch e := event.(type) {
-		case events.PriceUpdate:
-			message = WebSocketMessage{
-				EventType: "price_update",
-				Data:      e,
+			switch e := event.(type) {
+			case events.PriceUpdate:
+				message = WebSocketMessage{
+					EventType: "price_update",
+					Data:      e,
+				}
+			// add more cases for other event types if needed
+			default:
+				wsh.log.Warn("Unknown event type", "event", e)
+				continue
 			}
-		// add more cases here for other event types
-		default:
-			wsh.log.Warn("Unknown event type", "event", e)
-			continue
-		}
 
-		payload, err := json.Marshal(message)
-		if err != nil {
-			wsh.log.Error("Error marshaling message", "error", err)
-			continue
-		}
+			payload, err := json.Marshal(message)
+			if err != nil {
+				wsh.log.Error("Error marshaling message", "error", err)
+				continue
+			}
 
-		// send the message over the WebSocket connection to the client
-		err = conn.WriteMessage(websocket.TextMessage, payload)
-		if err != nil {
-			wsh.log.Error("Error writing message to WebSocket", "error", err)
-			break
+			// send the message over the WebSocket connection to the client
+			err = conn.WriteMessage(websocket.TextMessage, payload)
+			if err != nil {
+				wsh.log.Error("Error writing message to WebSocket", "error", err)
+				// connection might be closed, exit the loop
+				return
+			}
+		case <-done:
+			// the connection has been closed
+			wsh.log.Info("Connection has been closed by client")
+			return
 		}
 	}
 }
 
-func (wsh *WebSocketHandler) readPump(conn *websocket.Conn) {
+func (wsh *WebSocketHandler) readPump(conn *websocket.Conn, done chan struct{}) {
+	defer close(done)
 	for {
 		_, _, err := conn.ReadMessage()
 		if err != nil {

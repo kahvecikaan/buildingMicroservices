@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/hashicorp/go-hclog"
 	"github.com/kahvecikaan/buildingMicroservices/currency/protos"
+	"github.com/kahvecikaan/buildingMicroservices/product-api/events"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"io"
@@ -59,14 +60,16 @@ type ProductsDB struct {
 	stream         protos.Currency_SubscribeRatesClient
 	closeCh        chan struct{}
 	ratesMutex     sync.RWMutex
+	eventBus       *events.EventBus[any]
 }
 
-func NewProductsDB(log hclog.Logger, c protos.CurrencyClient) *ProductsDB {
+func NewProductsDB(log hclog.Logger, c protos.CurrencyClient, eventBus *events.EventBus[any]) *ProductsDB {
 	db := &ProductsDB{
 		log:            log,
 		currencyClient: c,
 		rates:          make(map[string]float64),
 		closeCh:        make(chan struct{}),
+		eventBus:       eventBus,
 	}
 
 	go db.handleUpdates()
@@ -130,10 +133,16 @@ func (db *ProductsDB) handleUpdates() {
 					"destination", rateResponse.GetDestination().String(),
 					"rate", rateResponse.GetRate())
 
+				currency := rateResponse.GetDestination().String()
+				newRate := rateResponse.GetRate()
+
 				// update the rates in a thread-safe manner
 				db.ratesMutex.Lock()
-				db.rates[rateResponse.Destination.String()] = rateResponse.Rate
+				db.rates[currency] = newRate
 				db.ratesMutex.Unlock()
+
+				// publish price updates for products priced in this currency
+				db.publishPriceUpdates(currency)
 
 			case *protos.StreamingRateResponse_Error:
 				errorStatus := msg.Error
@@ -152,6 +161,34 @@ func (db *ProductsDB) handleUpdates() {
 	}
 
 	wg.Wait() // wait for heartbeat routine to finish
+}
+
+func (db *ProductsDB) publishPriceUpdates(currency string) {
+	db.log.Info("Publish price updates", "currency", currency)
+
+	db.ratesMutex.RLock()
+	rate, ok := db.rates[currency]
+	db.ratesMutex.RUnlock()
+
+	if !ok {
+		db.log.Error("Rate not found for currency", "currency", currency)
+		return
+	}
+
+	// iterate over products and publish updates
+	for _, product := range productList {
+		// assume products are priced in EUR and convert to destination
+		newPrice := product.Price * rate
+
+		// create a PriceUpdate event
+		update := events.PriceUpdate{
+			ProductID: product.ID,
+			NewPrice:  newPrice,
+		}
+
+		// publish the event
+		db.eventBus.Publish(update)
+	}
 }
 
 func (db *ProductsDB) sendHeartbeat() error {

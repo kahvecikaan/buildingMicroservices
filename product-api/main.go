@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/kahvecikaan/buildingMicroservices/currency/protos"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/data"
+	"github.com/kahvecikaan/buildingMicroservices/product-api/events"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/handlers"
 	"github.com/nicholasjackson/env"
 	"google.golang.org/grpc"
@@ -57,13 +58,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	// create a new database instance
-	db := data.NewProductsDB(l, currencyClient)
+	// initialize the EventBus
+	eventBus := events.NewEventBus[any]()
 
+	// create a new database instance
+	db := data.NewProductsDB(l, currencyClient, eventBus)
+
+	// create the WebSocket handler with the event bus
+	wsHandler := handlers.NewWebSocketHandler(l, eventBus)
+
+	// create the Products handler
 	ph := handlers.NewProducts(l, v, db)
 
 	// create a new router
 	sm := mux.NewRouter()
+
+	// register the WebSocket route
+	sm.HandleFunc("/ws", wsHandler.HandleWebSocket)
 
 	// handlers for API
 	getRouter := sm.Methods(http.MethodGet).Subrouter()

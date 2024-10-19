@@ -20,7 +20,8 @@ func NewEventBus[T Event]() *EventBus[T] {
 }
 
 func (bus *EventBus[T]) Subscribe() Subscriber[T] {
-	ch := make(Subscriber[T])
+	// create a buffered channel with capacity 100
+	ch := make(Subscriber[T], 100)
 	bus.mutex.Lock()
 	bus.subscribers[ch] = struct{}{}
 	bus.mutex.Unlock()
@@ -41,8 +42,9 @@ func (bus *EventBus[T]) Publish(event T) {
 	for subscriber := range bus.subscribers {
 		select {
 		case subscriber <- event:
+			// event sent successfully
 		default:
-			// skip subscribers that are not ready to receive
+			// buffer is full; consider logging or handling?
 		}
 	}
 }

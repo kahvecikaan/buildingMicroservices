@@ -186,7 +186,7 @@ func (c *Currency) GetRate(ctx context.Context, rr *protos.RateRequest) (*protos
 	}, nil
 }
 
-// SubscribeRates implement the rpc function specified in the .proto file
+// SubscribeRates implements the rpc function specified in the .proto file
 func (c *Currency) SubscribeRates(clientStream protos.Currency_SubscribeRatesServer) error {
 	for {
 		rateRequest, err := clientStream.Recv()
@@ -268,6 +268,23 @@ func (c *Currency) SubscribeRates(clientStream protos.Currency_SubscribeRatesSer
 		}
 	}
 	return nil
+}
+
+func (c *Currency) ListCurrencies(ctx context.Context, req *protos.Empty) (*protos.ListCurrenciesResponse, error) {
+	c.log.Info("Handling ListCurrencies request")
+
+	// Utilize the thread-safe method from ExchangeRates
+	allRates := c.rates.GetAllRates()
+
+	// Extract currency codes from the rates map
+	var currencies []string
+	for currency := range allRates {
+		currencies = append(currencies, currency)
+	}
+
+	return &protos.ListCurrenciesResponse{
+		Currencies: currencies,
+	}, nil
 }
 
 // updateClientActivity updates the last activity timestamp for a client

@@ -12,6 +12,8 @@ service Currency {
   // SubscribeRates allows a client to subscribe for changes in an exchange rate
   // when the rate changes a response will be sent
   rpc SubscribeRates(stream RateRequest) returns (stream StreamingRateResponse);
+  // ListCurrencies lists all available currencies
+  rpc ListCurrencies(Empty) returns (ListCurrenciesResponse);
 }
 
 // RateRequest defines the request for a GetRate call
@@ -39,6 +41,11 @@ message StreamingRateResponse {
     RateResponse rate_response = 1;
     google.rpc.Status error = 2;
   }
+}
+
+message Empty {};
+message ListCurrenciesResponse {
+  repeated string currencies = 1;
 }
 
 // Currencies is an enum which represents the allowed currencies for the API

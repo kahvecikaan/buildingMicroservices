@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	Currency_GetRate_FullMethodName        = "/currency.Currency/GetRate"
 	Currency_SubscribeRates_FullMethodName = "/currency.Currency/SubscribeRates"
+	Currency_ListCurrencies_FullMethodName = "/currency.Currency/ListCurrencies"
 )
 
 // CurrencyClient is the client API for Currency service.
@@ -32,6 +33,8 @@ type CurrencyClient interface {
 	// SubscribeRates allows a client to subscribe for changes in an exchange rate
 	// when the rate changes a response will be sent
 	SubscribeRates(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RateRequest, StreamingRateResponse], error)
+	// ListCurrencies lists all available currencies
+	ListCurrencies(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ListCurrenciesResponse, error)
 }
 
 type currencyClient struct {
@@ -65,6 +68,16 @@ func (c *currencyClient) SubscribeRates(ctx context.Context, opts ...grpc.CallOp
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Currency_SubscribeRatesClient = grpc.BidiStreamingClient[RateRequest, StreamingRateResponse]
 
+func (c *currencyClient) ListCurrencies(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ListCurrenciesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCurrenciesResponse)
+	err := c.cc.Invoke(ctx, Currency_ListCurrencies_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CurrencyServer is the server API for Currency service.
 // All implementations must embed UnimplementedCurrencyServer
 // for forward compatibility.
@@ -74,6 +87,8 @@ type CurrencyServer interface {
 	// SubscribeRates allows a client to subscribe for changes in an exchange rate
 	// when the rate changes a response will be sent
 	SubscribeRates(grpc.BidiStreamingServer[RateRequest, StreamingRateResponse]) error
+	// ListCurrencies lists all available currencies
+	ListCurrencies(context.Context, *Empty) (*ListCurrenciesResponse, error)
 	mustEmbedUnimplementedCurrencyServer()
 }
 
@@ -89,6 +104,9 @@ func (UnimplementedCurrencyServer) GetRate(context.Context, *RateRequest) (*Rate
 }
 func (UnimplementedCurrencyServer) SubscribeRates(grpc.BidiStreamingServer[RateRequest, StreamingRateResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method SubscribeRates not implemented")
+}
+func (UnimplementedCurrencyServer) ListCurrencies(context.Context, *Empty) (*ListCurrenciesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCurrencies not implemented")
 }
 func (UnimplementedCurrencyServer) mustEmbedUnimplementedCurrencyServer() {}
 func (UnimplementedCurrencyServer) testEmbeddedByValue()                  {}
@@ -136,6 +154,24 @@ func _Currency_SubscribeRates_Handler(srv interface{}, stream grpc.ServerStream)
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Currency_SubscribeRatesServer = grpc.BidiStreamingServer[RateRequest, StreamingRateResponse]
 
+func _Currency_ListCurrencies_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CurrencyServer).ListCurrencies(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Currency_ListCurrencies_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CurrencyServer).ListCurrencies(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Currency_ServiceDesc is the grpc.ServiceDesc for Currency service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -146,6 +182,10 @@ var Currency_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRate",
 			Handler:    _Currency_GetRate_Handler,
+		},
+		{
+			MethodName: "ListCurrencies",
+			Handler:    _Currency_ListCurrencies_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

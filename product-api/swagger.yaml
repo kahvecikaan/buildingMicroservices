@@ -2,6 +2,17 @@ basePath: /
 consumes:
     - application/json
 definitions:
+    ErrorResponse:
+        description: ErrorResponse defines the structure for API error responses
+        properties:
+            message:
+                description: The error message
+                type: string
+                x-go-name: Message
+        required:
+            - message
+        type: object
+        x-go-package: github.com/kahvecikaan/buildingMicroservices/product-api/internal/transport/http
     GenericError:
         description: GenericError GenericError is a generic error message returned by a server
         properties:
@@ -12,33 +23,38 @@ definitions:
         type: object
         x-go-package: github.com/kahvecikaan/buildingMicroservices/product-api/sdk/models
     Product:
-        description: Product Product defines the structure for an API product
+        description: Product represents the product model
         properties:
             description:
-                description: the description for this product
+                description: The description of the product
+                example: Freshly brewed coffee
                 maxLength: 10000
                 type: string
                 x-go-name: Description
             id:
-                description: the id for this user
+                description: The ID of the product
+                example: 1
                 format: int64
                 minimum: 1
                 type: integer
                 x-go-name: ID
             name:
-                description: the name for this product
+                description: The name of the product
+                example: Coffee
                 maxLength: 255
                 type: string
                 x-go-name: Name
             price:
-                description: the price for the product
-                format: float
+                description: The price of the product
+                example: 2.99
+                format: double
                 minimum: 0.01
                 type: number
                 x-go-name: Price
             sku:
-                description: the sku for this product
-                pattern: '[a-z]+-[a-z]+-[a-z]+'
+                description: The SKU of the product in the format abc-abc-abc
+                example: abc-def-ghi
+                pattern: '''^[a-zA-Z]{3}-[a-zA-Z]{3}-[a-zA-Z]{3}$'''
                 type: string
                 x-go-name: SKU
         required:
@@ -47,7 +63,7 @@ definitions:
             - price
             - sku
         type: object
-        x-go-package: github.com/kahvecikaan/buildingMicroservices/product-api/sdk/models
+        x-go-package: github.com/kahvecikaan/buildingMicroservices/product-api/internal/domain
     ValidationError:
         description: ValidationError ValidationError is a collection of validation error messages
         properties:
@@ -57,77 +73,61 @@ definitions:
                     type: string
                 type: array
                 x-go-name: Messages
+        required:
+            - messages
         type: object
         x-go-package: github.com/kahvecikaan/buildingMicroservices/product-api/sdk/models
 info:
-    description: Documentation for Product API
+    description: '# Documentation for Product API'
     title: of Product API
     version: 1.0.0
 paths:
+    /currencies:
+        get:
+            operationId: listCurrencies
+            responses:
+                "200":
+                    $ref: '#/responses/currenciesResponse'
+                "500":
+                    $ref: '#/responses/errorResponse'
+            summary: Returns a list of available currency codes.
+            tags:
+                - currencies
     /products:
         get:
-            description: Returns a list of products
             operationId: listProducts
-            parameters:
-                - description: |-
-                    Currency is used when returning the price of the product,
-                    when not specified, currency is returned in EUR
-                  in: query
-                  name: Currency
-                  type: string
             responses:
                 "200":
                     $ref: '#/responses/productsResponse'
+                "500":
+                    $ref: '#/responses/errorResponse'
+            summary: Returns a list of products.
             tags:
                 - products
         post:
-            description: Create a new product
-            operationId: createProduct
+            operationId: addProduct
             parameters:
-                - description: |-
-                    Product data structure to Update or Create.
-                    Note: the id field is ignored by update and create operations
+                - description: Product data structure to create or update.
                   in: body
                   name: Body
                   required: true
                   schema:
                     $ref: '#/definitions/Product'
             responses:
-                "200":
+                "201":
                     $ref: '#/responses/productResponse'
-                "422":
-                    $ref: '#/responses/errorValidation'
-                "501":
+                "400":
+                    $ref: '#/responses/validationErrorResponse'
+                "500":
                     $ref: '#/responses/errorResponse'
-            tags:
-                - products
-        put:
-            description: Update a products details
-            operationId: updateProduct
-            parameters:
-                - description: |-
-                    Product data structure to Update or Create.
-                    Note: the id field is ignored by update and create operations
-                  in: body
-                  name: Body
-                  required: true
-                  schema:
-                    $ref: '#/definitions/Product'
-            responses:
-                "204":
-                    $ref: '#/responses/noContentResponse'
-                "404":
-                    $ref: '#/responses/errorResponse'
-                "422":
-                    $ref: '#/responses/errorValidation'
+            summary: Adds a new product.
             tags:
                 - products
     /products/{id}:
         delete:
-            description: Update a products details
             operationId: deleteProduct
             parameters:
-                - description: The id of the product for which the operation relates
+                - description: The ID of the product
                   format: int64
                   in: path
                   name: id
@@ -139,21 +139,15 @@ paths:
                     $ref: '#/responses/noContentResponse'
                 "404":
                     $ref: '#/responses/errorResponse'
-                "501":
+                "500":
                     $ref: '#/responses/errorResponse'
+            summary: Deletes a product.
             tags:
                 - products
         get:
-            description: Returns a single product from the database
-            operationId: listSingleProduct
+            operationId: getProductByID
             parameters:
-                - description: |-
-                    Currency is used when returning the price of the product,
-                    when not specified, currency is returned in EUR
-                  in: query
-                  name: Currency
-                  type: string
-                - description: The id of the product for which the operation relates
+                - description: The ID of the product
                   format: int64
                   in: path
                   name: id
@@ -163,23 +157,56 @@ paths:
             responses:
                 "200":
                     $ref: '#/responses/productResponse'
+                "400":
+                    $ref: '#/responses/errorResponse'
                 "404":
                     $ref: '#/responses/errorResponse'
+            summary: Returns a product by ID.
+            tags:
+                - products
+        put:
+            operationId: updateProduct
+            parameters:
+                - description: The ID of the product
+                  format: int64
+                  in: path
+                  name: id
+                  required: true
+                  type: integer
+                  x-go-name: ID
+                - description: Product data structure to create or update.
+                  in: body
+                  name: Body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/Product'
+            responses:
+                "204":
+                    $ref: '#/responses/noContentResponse'
+                "400":
+                    $ref: '#/responses/validationErrorResponse'
+                "404":
+                    $ref: '#/responses/errorResponse'
+                "500":
+                    $ref: '#/responses/errorResponse'
+            summary: Updates an existing product.
             tags:
                 - products
 produces:
     - application/json
 responses:
+    currenciesResponse:
+        description: A list of currency codes
+        schema:
+            items:
+                type: string
+            type: array
     errorResponse:
         description: Generic error message returned as a string
         schema:
-            $ref: '#/definitions/GenericError'
-    errorValidation:
-        description: Validation errors defined as an array of strings
-        schema:
-            $ref: '#/definitions/ValidationError'
+            $ref: '#/definitions/ErrorResponse'
     noContentResponse:
-        description: No content is returned by this API endpoint
+        description: No content response for endpoints that return 204
     productResponse:
         description: Data structure representing a single product
         schema:
@@ -190,6 +217,10 @@ responses:
             items:
                 $ref: '#/definitions/Product'
             type: array
+    validationErrorResponse:
+        description: Validation errors defined as an array of strings
+        schema:
+            $ref: '#/definitions/ValidationError'
 schemes:
     - http
 swagger: "2.0"

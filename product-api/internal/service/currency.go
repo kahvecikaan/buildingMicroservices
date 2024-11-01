@@ -27,6 +27,8 @@ type currencyService struct {
 	subMutex      sync.RWMutex
 	closeCh       chan struct{}
 	eventBus      *events.EventBus[any]
+	once          sync.Once
+	wg            sync.WaitGroup
 }
 
 func NewCurrencyService(
@@ -48,6 +50,7 @@ func NewCurrencyService(
 	}
 
 	// Start handling rate updates and heartbeat
+	svc.wg.Add(2)
 	go svc.handleRateUpdates()
 	go svc.handleHeartbeat()
 
@@ -65,6 +68,7 @@ func (s *currencyService) initializeStream(ctx context.Context) error {
 }
 
 func (s *currencyService) handleHeartbeat() {
+	defer s.wg.Done()
 	ticker := time.NewTimer(1 * time.Minute)
 	defer ticker.Stop()
 
@@ -90,15 +94,18 @@ func (s *currencyService) handleHeartbeat() {
 				s.log.Debug("Heartbeat send successfully")
 			}
 		case <-s.closeCh:
+			s.log.Info("handleHeartbeat received shutdown signal")
 			return
 		}
 	}
 }
 
 func (s *currencyService) handleRateUpdates() {
+	defer s.wg.Done()
 	for {
 		select {
 		case <-s.closeCh:
+			s.log.Info("handleRateUpdates received shutdown signal")
 			return
 		default:
 			if s.stream == nil {
@@ -232,10 +239,22 @@ func (s *currencyService) ListAvailableCurrencies(ctx context.Context) ([]string
 	return resp.Currencies, nil
 }
 
+// Close gracefully shuts down the CurrencyService
 func (s *currencyService) Close() error {
-	close(s.closeCh)
-	if s.stream != nil {
-		return s.stream.CloseSend()
-	}
-	return nil
+	var err error
+	s.once.Do(func() {
+		s.log.Info("Shutting down CurrencyService...")
+		close(s.closeCh) // Signal goroutines to stop
+
+		// Close the gRPC stream
+		if s.stream != nil {
+			err = s.stream.CloseSend()
+		}
+
+		// Wait for all goroutines to finish
+		s.wg.Wait()
+
+		s.log.Info("CurrencyService shutdown complete.")
+	})
+	return err
 }

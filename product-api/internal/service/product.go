@@ -6,6 +6,7 @@ import (
 	"github.com/kahvecikaan/buildingMicroservices/product-api/internal/domain"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/internal/events"
 	"github.com/kahvecikaan/buildingMicroservices/product-api/internal/repository"
+	"sync"
 )
 
 type ProductService interface {
@@ -24,6 +25,8 @@ type productService struct {
 	eventBus        *events.EventBus[any]
 	logger          hclog.Logger
 	rateSubscriber  events.Subscriber[any]
+	wg              sync.WaitGroup
+	once            sync.Once
 }
 
 type Products []*domain.Product
@@ -44,12 +47,14 @@ func NewProductService(
 	ps.rateSubscriber = eventBus.Subscribe()
 
 	// Start handling rate change events
+	ps.wg.Add(1)
 	go ps.handleRateChanges()
 
 	return ps
 }
 
 func (s *productService) handleRateChanges() {
+	defer s.wg.Done()
 	for event := range s.rateSubscriber {
 		if rateEvent, ok := event.(events.RateChanged); ok {
 			s.logger.Debug("Received rate changed event",
@@ -190,8 +195,21 @@ func (s *productService) ListCurrencies(ctx context.Context) ([]string, error) {
 }
 
 func (s *productService) Close() error {
-	if s.rateSubscriber != nil {
-		s.eventBus.Unsubscribe(s.rateSubscriber)
-	}
+	s.once.Do(func() {
+		s.logger.Info("Shutting down ProductService...")
+
+		// Unsubscribe from the event bus to stop receiving events
+		if s.rateSubscriber != nil {
+			s.eventBus.Unsubscribe(s.rateSubscriber)
+			s.rateSubscriber = nil
+			s.logger.Info("Unsubscribed from rate change events")
+		}
+
+		// Wait for handleRateChanges goroutine to finish
+		s.wg.Wait()
+
+		s.logger.Info("ProductService shutdown complete.")
+	})
+
 	return nil
 }

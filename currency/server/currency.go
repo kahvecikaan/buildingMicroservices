@@ -26,6 +26,9 @@ type Currency struct {
 	subscriptions map[protos.Currency_SubscribeRatesServer]*clientSubscription
 	subsMutex     sync.RWMutex
 	protos.UnimplementedCurrencyServer
+	closeCh chan struct{}
+	wg      sync.WaitGroup
+	once    sync.Once // Ensure Close() is called only once
 }
 
 // NewCurrency creates a new Currency server
@@ -33,7 +36,10 @@ func NewCurrency(l hclog.Logger, r *data.ExchangeRates) *Currency {
 	c := &Currency{
 		log:           l,
 		rates:         r,
-		subscriptions: make(map[protos.Currency_SubscribeRatesServer]*clientSubscription)}
+		subscriptions: make(map[protos.Currency_SubscribeRatesServer]*clientSubscription),
+		closeCh:       make(chan struct{}),
+	}
+	c.wg.Add(1)
 	go c.handleUpdates()
 
 	return c
@@ -41,6 +47,7 @@ func NewCurrency(l hclog.Logger, r *data.ExchangeRates) *Currency {
 
 // handleUpdates sends updated rates to subscribed clients and removes stale subscriptions
 func (c *Currency) handleUpdates() {
+	defer c.wg.Done()
 	rateUpdates := c.rates.MonitorRates(5 * time.Second)
 	cleanupTicker := time.NewTicker(1 * time.Minute)
 	defer cleanupTicker.Stop()
@@ -91,6 +98,9 @@ func (c *Currency) handleUpdates() {
 			}
 		case <-cleanupTicker.C:
 			c.removeStaleSubscriptions()
+		case <-c.closeCh:
+			c.log.Info("handleUpdates received shutdown signal")
+			return
 		}
 	}
 }
@@ -153,17 +163,15 @@ func (c *Currency) getSubscriptionsCopy() map[protos.Currency_SubscribeRatesServ
 func (c *Currency) GetRate(ctx context.Context, rr *protos.RateRequest) (*protos.RateResponse, error) {
 	c.log.Info("Handle request response for GetRate", "base", rr.GetBase(), "dest", rr.GetDestination())
 
-	// validate parameters: base currency cannot be the same as destination
+	// If base and destination are the same, return rate of 1.0
 	if rr.Base == rr.Destination {
-		err := status.Errorf(
-			codes.InvalidArgument,
-			"Base currency %s cannot be equal to destination currency %s",
-			rr.Base.String(),
-			rr.Base.String(),
-		)
-
-		return nil, err
+		return &protos.RateResponse{
+			Base:        rr.GetBase(),
+			Destination: rr.GetDestination(),
+			Rate:        1.0,
+		}, nil
 	}
+
 	// validate Base currency
 	if rr.GetBase() == protos.Currencies_UNKNOWN {
 		return nil, status.Errorf(codes.InvalidArgument, "Base currency is not specified")
@@ -333,4 +341,15 @@ func (c *Currency) subscriptionExists(
 	}
 
 	return false
+}
+
+// Close gracefully shuts down the Currency server
+func (c *Currency) Close() {
+	c.once.Do(func() {
+		c.log.Info("Shutting down Currency server...")
+		close(c.closeCh) // Signal goroutines to stop
+		c.wg.Wait()      // Wait for all goroutines to finish
+		c.rates.Close()  // Close ExchangeRates
+		c.log.Info("Currency server shutdown complete")
+	})
 }

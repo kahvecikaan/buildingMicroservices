@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -35,6 +36,7 @@ func main() {
 	// Initialize the logger
 	logger := hclog.New(&hclog.LoggerOptions{
 		Name:  "product-api",
+		Color: hclog.AutoColor,
 		Level: hclog.LevelFromString(*logLevel),
 	})
 
@@ -48,7 +50,7 @@ func main() {
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
-	grpcConn, err := grpc.Dial(*grpcAddress, dialOpts...)
+	grpcConn, err := grpc.NewClient(*grpcAddress, dialOpts...)
 	if err != nil {
 		logger.Error("Failed to connect to currency service", "error", err)
 		os.Exit(1)
@@ -69,7 +71,6 @@ func main() {
 		currencyClient,
 		eventBus, // Pass the event bus here
 	)
-	defer cs.Close()
 
 	// Initialize the ProductRepository
 	prodRep := repository.NewMemoryProductRepository()
@@ -118,13 +119,18 @@ func main() {
 
 	// Graceful shutdown
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
 	logger.Info("Shutting down server")
 
 	// Context for graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
+
+	// Shutdown HTTP server first to stop accepting new requests
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		logger.Error("Error shutting down HTTP server", "error", err)
+	}
 
 	// Cleanup services
 	if err := ps.Close(); err != nil {
@@ -135,7 +141,7 @@ func main() {
 		logger.Error("Error closing currency service", "error", err)
 	}
 
-	server.Shutdown(shutdownCtx)
+	logger.Info("Server shutdown complete.")
 }
 
 func checkCurrencyService(client protos.CurrencyClient) error {

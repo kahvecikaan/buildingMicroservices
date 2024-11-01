@@ -12,15 +12,19 @@ import (
 )
 
 type ExchangeRates struct {
-	log   hclog.Logger
-	rates map[string]float64
-	mutex sync.RWMutex
+	log     hclog.Logger
+	rates   map[string]float64
+	mutex   sync.RWMutex
+	closeCh chan struct{}  // Channel to signal shutdown
+	wg      sync.WaitGroup // WaitGroup to manage goroutines
 }
 
 func NewRates(logger hclog.Logger) (*ExchangeRates, error) {
 	er := &ExchangeRates{
-		log:   logger,
-		rates: map[string]float64{}}
+		log:     logger,
+		rates:   map[string]float64{},
+		closeCh: make(chan struct{}),
+	}
 
 	err := er.getRates()
 	if err != nil {
@@ -31,6 +35,9 @@ func NewRates(logger hclog.Logger) (*ExchangeRates, error) {
 }
 
 func (e *ExchangeRates) GetRate(base, dest string) (float64, error) {
+	e.mutex.RLock()
+	defer e.mutex.RUnlock()
+
 	br, ok := e.rates[base]
 	if !ok {
 		return 0, fmt.Errorf("rate not found for currency %s", base)
@@ -44,43 +51,48 @@ func (e *ExchangeRates) GetRate(base, dest string) (float64, error) {
 	return dr / br, nil
 }
 
-// MonitorRates checks the rates in the ECB API every interval and sends a message to the
-// returned channel when there are changes
-//
-// Note: the ECB API only returns data once a day, this function only simulates the changes
-// in rates for demonstration purposes
+// MonitorRates periodically simulates rate changes and notifies via the returned channel
 func (e *ExchangeRates) MonitorRates(interval time.Duration) chan struct{} {
 	ret := make(chan struct{})
 
+	e.wg.Add(1) // Increment WaitGroup counter
+
 	go func() {
+		defer e.wg.Done() // Decrement WaitGroup counter when goroutine completes
 		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
 		for {
 			select {
 			case <-ticker.C:
-				// just add a random difference to the rate and return it
-				// this simulates the fluctuations in currency rates
 				e.mutex.Lock()
 				for k, v := range e.rates {
-					// change can be 10% of original value
-					change := rand.Float64() / 10
-					// is this a pos. or neg. change
-					direction := rand.Intn(1)
+					if k == "EUR" {
+						// Skip modifying EUR's rate
+						continue
+					}
+					// Simulate rate fluctuation
+					change := rand.Float64() / 10 // Up to 10%
+					direction := rand.Intn(2)     // 0 or 1
 
 					if direction == 0 {
-						// new value will be min 90% of old
+						// Decrease rate by up to 10%
 						change = 1 - change
 					} else {
-						// new value will be 110% of old
+						// Increase rate by up to 10%
 						change = 1 + change
 					}
 
-					// modify the rate
+					// Modify the rate
 					e.rates[k] = v * change
 				}
 				e.mutex.Unlock()
 
-				// notify updates, this will block unless there is a listener on the other end
+				// Notify updates
 				ret <- struct{}{}
+			case <-e.closeCh:
+				e.log.Info("MonitorRates received shutdown signal")
+				return
 			}
 		}
 	}()
@@ -118,7 +130,7 @@ func (e *ExchangeRates) getRates() error {
 		e.rates[cube.Currency] = rate
 	}
 
-	e.rates["EUR"] = 1
+	e.rates["EUR"] = 1.0 // Ensure EUR is always present with rate 1.0
 	return nil
 }
 
@@ -141,4 +153,11 @@ type Cubes struct {
 type Cube struct {
 	Currency string `xml:"currency,attr"`
 	Rate     string `xml:"rate,attr"`
+}
+
+// Close gracefully shuts down the ExchangeRates service
+func (e *ExchangeRates) Close() {
+	close(e.closeCh) // Signal goroutines to stop
+	e.wg.Wait()      // Wait for all goroutines to finish
+	e.log.Info("ExchangeRates service closed gracefully")
 }
